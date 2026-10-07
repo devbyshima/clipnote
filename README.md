@@ -72,4 +72,9 @@ The test video is three narrated slides with a burned-in caption. It isn't in th
 
 ## License
 
-[MIT](LICENSE)
+Clipnote is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+You may use, study and change it for any non-commercial purpose. Selling it, or using it in
+anything that earns money, is not allowed. The first published version, released under MIT, remains under MIT.
+
+The Clipnote name and icon are not covered by the license: a modified version must use its own
+name and icon.
