@@ -1,0 +1,226 @@
+import Foundation
+import Observation
+import SwiftData
+import UniformTypeIdentifiers
+
+/// Owns the notes store and the queue of videos waiting to be processed.
+/// Videos are processed one at a time, in the order they were added.
+@MainActor @Observable
+final class ProcessingCenter {
+    static let shared = ProcessingCenter()
+
+    let container: ModelContainer
+    var isImporterPresented = false
+    var importError: String?
+    /// The most recently imported note, so the window can select it.
+    private(set) var lastImportedID: UUID?
+    private(set) var processingID: UUID?
+    private(set) var speechPhase: WhisperService.Phase = .idle
+
+    @ObservationIgnored private var queue: [UUID] = []
+    @ObservationIgnored private var worker: Task<Void, Never>?
+    @ObservationIgnored private var currentRun: Task<PipelineResult, any Error>?
+    @ObservationIgnored private let pipeline = ClipPipeline()
+    @ObservationIgnored private var started = false
+
+    private init() {
+        container = Self.makeContainer()
+    }
+
+    var context: ModelContext { container.mainContext }
+
+    static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// Picks up videos left unfinished when the app last quit, and loads the
+    /// speech model in the background so the first video starts quickly.
+    func start() {
+        guard !started, !Self.isRunningTests else { return }
+        started = true
+        let unfinished = FetchDescriptor<Note>(sortBy: [SortDescriptor(\.createdAt)])
+        for note in (try? context.fetch(unfinished)) ?? [] where note.status == .queued || note.status == .processing {
+            enqueue(note)
+        }
+        prepareSpeechModel()
+    }
+
+    func prepareSpeechModel() {
+        guard WhisperEngine.isBundled else { return }
+        Task {
+            let phases = await WhisperService.shared.phases()
+            await WhisperService.shared.prepare()
+            for await phase in phases { speechPhase = phase }
+        }
+    }
+
+    // MARK: Importing
+
+    @discardableResult
+    func importFiles(_ urls: [URL]) -> [Note] {
+        var created: [Note] = []
+        var skipped: [String] = []
+        for url in urls {
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard Self.isMedia(url) else {
+                skipped.append(url.lastPathComponent)
+                continue
+            }
+            let note = Note(sourceName: url.lastPathComponent, sourceBookmark: try? Note.bookmark(for: url))
+            context.insert(note)
+            created.append(note)
+        }
+        save()
+        if !skipped.isEmpty {
+            importError = "Clipnote makes notes from video and audio files. Skipped: \(skipped.joined(separator: ", "))."
+        }
+        for note in created { enqueue(note) }
+        if let last = created.last { lastImportedID = last.id }
+        return created
+    }
+
+    nonisolated static func isMedia(_ url: URL) -> Bool {
+        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)
+            ?? UTType(filenameExtension: url.pathExtension)
+        return type?.conforms(to: .audiovisualContent) ?? false
+    }
+
+    // MARK: Queue
+
+    func enqueue(_ note: Note) {
+        note.status = .queued
+        note.stage = "Waiting"
+        note.progress = 0
+        note.errorMessage = nil
+        if processingID != note.id, !queue.contains(note.id) { queue.append(note.id) }
+        save()
+        if worker == nil {
+            worker = Task { await drain() }
+        }
+    }
+
+    func stop(_ note: Note) {
+        if processingID == note.id {
+            currentRun?.cancel()
+        } else {
+            queue.removeAll { $0 == note.id }
+            markStopped(note)
+        }
+    }
+
+    func delete(_ note: Note) {
+        stop(note)
+        try? FileManager.default.removeItem(at: note.thumbnailsFolder)
+        context.delete(note)
+        save()
+    }
+
+    func save() {
+        try? context.save()
+    }
+
+    func note(with id: UUID) -> Note? {
+        var descriptor = FetchDescriptor<Note>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    private func drain() async {
+        while !queue.isEmpty {
+            let id = queue.removeFirst()
+            await process(id)
+        }
+        worker = nil
+    }
+
+    private func process(_ id: UUID) async {
+        guard let note = note(with: id) else { return }
+        processingID = id
+        defer { processingID = nil }
+
+        note.status = .processing
+        note.stage = "Opening video"
+        note.progress = 0
+        save()
+
+        guard let url = note.resolveSource() else {
+            fail(note, ClipError.fileMissing)
+            return
+        }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        let options = PipelineOptions.fromDefaults()
+        let folder = note.thumbnailsFolder
+        try? FileManager.default.removeItem(at: folder)
+
+        let pipeline = pipeline
+        let run = Task(priority: .userInitiated) {
+            try await pipeline.run(url: url, options: options, thumbnailsFolder: folder) { update in
+                Task { @MainActor in ProcessingCenter.shared.apply(update, to: id) }
+            }
+        }
+        currentRun = run
+        defer { currentRun = nil }
+
+        do {
+            let result = try await run.value
+            if !note.titleEdited { note.title = result.title }
+            note.content = result.content
+            note.duration = result.duration
+            note.status = .ready
+            note.stage = ""
+            note.progress = 1
+            note.errorMessage = nil
+        } catch is CancellationError {
+            markStopped(note)
+        } catch {
+            if run.isCancelled { markStopped(note) } else { fail(note, error) }
+        }
+        save()
+    }
+
+    private func apply(_ update: PipelineUpdate, to id: UUID) {
+        guard processingID == id, let note = note(with: id), note.status == .processing else { return }
+        note.stage = update.stage
+        note.progress = max(note.progress, update.fraction)
+    }
+
+    private func fail(_ note: Note, _ error: any Error) {
+        note.status = .failed
+        note.stage = ""
+        note.errorMessage = error.localizedDescription
+        save()
+    }
+
+    private func markStopped(_ note: Note) {
+        note.status = .failed
+        note.stage = ""
+        note.errorMessage = "Processing was stopped."
+        save()
+    }
+
+    // MARK: Store
+
+    private static func makeContainer() -> ModelContainer {
+        let folder = URL.applicationSupportDirectory
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appending(path: "Clipnote.store")
+        let schema = Schema([Note.self])
+        if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
+            return container
+        }
+        // An unreadable store is set aside rather than crashing the app.
+        let aside = folder.appending(path: "Clipnote-unreadable-\(Int(Date.now.timeIntervalSince1970)).store")
+        try? FileManager.default.moveItem(at: url, to: aside)
+        if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
+            return container
+        }
+        do {
+            return try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+        } catch {
+            fatalError("Clipnote couldn't create its notes store: \(error)")
+        }
+    }
+}
