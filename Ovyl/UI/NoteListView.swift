@@ -20,7 +20,7 @@ struct NoteListView: View {
                 ContentUnavailableView {
                     Label("No Notes", systemImage: "film.stack")
                 } description: {
-                    Text("Drop a video here or press ⌘O.")
+                    Text("Drop a video or pictures here, or press ⌘O.")
                 }
             }
         }
@@ -42,7 +42,7 @@ struct NoteListView: View {
         case .ready, .failed:
             Button("Process Again", systemImage: "arrow.clockwise") { center.enqueue(note) }
         }
-        Button("Show Video in Finder", systemImage: "folder") { revealSource(of: note) }
+        Button("Show in Finder", systemImage: "folder") { revealSource(of: note) }
         Divider()
         Button("Delete", systemImage: "trash", role: .destructive) {
             if selection == note.id { selection = nil }
@@ -51,10 +51,10 @@ struct NoteListView: View {
     }
 
     private func revealSource(of note: Note) {
-        guard let url = note.resolveSource() else { return }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        let urls = note.kind == .pictures ? note.resolvePictures() : note.resolveSource().map { [$0] } ?? []
+        let accessed = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer { for url in accessed { url.stopAccessingSecurityScopedResource() } }
+        if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
     }
 }
 
@@ -101,7 +101,12 @@ struct NoteRow: View {
 
     private var subtitle: String {
         var parts = [note.createdAt.formatted(.relative(presentation: .named))]
-        if note.duration > 0 { parts.append(TimeFormat.duration(note.duration)) }
+        if note.kind == .pictures {
+            let count = note.pictureBookmarks.count
+            parts.append(count == 1 ? "1 picture" : "\(count) pictures")
+        } else if note.duration > 0 {
+            parts.append(TimeFormat.duration(note.duration))
+        }
         return parts.joined(separator: " · ")
     }
 

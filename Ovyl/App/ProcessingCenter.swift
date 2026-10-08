@@ -3,8 +3,8 @@ import Observation
 import SwiftData
 import UniformTypeIdentifiers
 
-/// Owns the notes store and the queue of videos waiting to be processed.
-/// Videos are processed one at a time, in the order they were added.
+/// Owns the notes store and the queue of notes waiting to be made. Notes are
+/// made one at a time, in the order they were added.
 @MainActor @Observable
 final class ProcessingCenter {
     static let shared = ProcessingCenter()
@@ -33,7 +33,7 @@ final class ProcessingCenter {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
-    /// Picks up videos left unfinished when the app last quit, and loads the
+    /// Picks up notes left unfinished when the app last quit, and loads the
     /// speech model in the background so the first video starts quickly.
     func start() {
         guard !started, !Self.isRunningTests else { return }
@@ -56,34 +56,53 @@ final class ProcessingCenter {
 
     // MARK: Importing
 
+    /// Makes a note from each video or audio file, and one note from all
+    /// the pictures, in file name order.
     @discardableResult
     func importFiles(_ urls: [URL]) -> [Note] {
         var created: [Note] = []
+        var pictures: [(name: String, bookmark: Data?)] = []
         var skipped: [String] = []
         for url in urls {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            guard Self.isMedia(url) else {
+            switch Self.kind(of: url) {
+            case .video:
+                let note = Note(sourceName: url.lastPathComponent, sourceBookmark: try? Note.bookmark(for: url))
+                context.insert(note)
+                created.append(note)
+            case .pictures:
+                pictures.append((url.lastPathComponent, try? Note.bookmark(for: url)))
+            case nil:
                 skipped.append(url.lastPathComponent)
-                continue
             }
-            let note = Note(sourceName: url.lastPathComponent, sourceBookmark: try? Note.bookmark(for: url))
+        }
+        if !pictures.isEmpty {
+            let note = Note(pictures: Self.inReadingOrder(pictures))
             context.insert(note)
             created.append(note)
         }
         save()
         if !skipped.isEmpty {
-            importError = "Ovyl makes notes from video and audio files. Skipped: \(skipped.joined(separator: ", "))."
+            importError = "Ovyl makes notes from videos, audio, and pictures. Skipped: \(skipped.joined(separator: ", "))."
         }
         for note in created { enqueue(note) }
         if let last = created.last { lastImportedID = last.id }
         return created
     }
 
-    nonisolated static func isMedia(_ url: URL) -> Bool {
+    nonisolated static func kind(of url: URL) -> NoteKind? {
         let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)
             ?? UTType(filenameExtension: url.pathExtension)
-        return type?.conforms(to: .audiovisualContent) ?? false
+        guard let type else { return nil }
+        if type.conforms(to: .audiovisualContent) { return .video }
+        if type.conforms(to: .image) { return .pictures }
+        return nil
+    }
+
+    /// By file name, the way Finder sorts: "Shot 2" before "Shot 10".
+    nonisolated static func inReadingOrder<T>(_ files: [(name: String, bookmark: T)]) -> [(name: String, bookmark: T)] {
+        files.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     // MARK: Queue
@@ -140,25 +159,33 @@ final class ProcessingCenter {
         defer { processingID = nil }
 
         note.status = .processing
-        note.stage = "Opening video"
+        note.stage = note.kind == .pictures ? "Opening pictures" : "Opening video"
         note.progress = 0
         save()
 
-        guard let url = note.resolveSource() else {
-            fail(note, ClipError.fileMissing)
+        let urls = note.kind == .pictures ? note.resolvePictures() : note.resolveSource().map { [$0] } ?? []
+        guard !urls.isEmpty else {
+            fail(note, note.kind == .pictures ? ClipError.notPicture : ClipError.fileMissing)
             return
         }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        let accessed = urls.filter { $0.startAccessingSecurityScopedResource() }
+        defer { for url in accessed { url.stopAccessingSecurityScopedResource() } }
 
         let options = PipelineOptions.fromDefaults()
         let folder = note.thumbnailsFolder
         try? FileManager.default.removeItem(at: folder)
 
         let pipeline = pipeline
+        let kind = note.kind
+        let onUpdate: @Sendable (PipelineUpdate) -> Void = { update in
+            Task { @MainActor in ProcessingCenter.shared.apply(update, to: id) }
+        }
         let run = Task(priority: .userInitiated) {
-            try await pipeline.run(url: url, options: options, thumbnailsFolder: folder) { update in
-                Task { @MainActor in ProcessingCenter.shared.apply(update, to: id) }
+            switch kind {
+            case .video:
+                try await pipeline.run(url: urls[0], options: options, thumbnailsFolder: folder, onUpdate: onUpdate)
+            case .pictures:
+                try await pipeline.run(pictures: urls, options: options, thumbnailsFolder: folder, onUpdate: onUpdate)
             }
         }
         currentRun = run

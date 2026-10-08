@@ -1,10 +1,14 @@
 # Ovyl
 
-A Mac app that turns videos into formatted notes. Drop in a video and Ovyl:
+A Mac app that turns videos and pictures into formatted notes. Drop in a video and Ovyl:
 
-- transcribes the speech,
-- reads text that appears on screen (slides, titles, code, signs),
+- transcribes the speech, and recognizes songs and other music instead of transcribing the lyrics,
+- reads text that appears on screen and tells apart subtitles, titles that stay on screen, slides, and remarks (commentary),
+- keeps one version where subtitles repeat the speech: the transcript, or the subtitles where the speech engine was unsure, missed words, or heard nothing,
+- makes the captions the note's text when a video has no speech (only music, or no sound),
 - writes a note with a title, summary, key points, and sections, with on-screen text placed where it appeared.
+
+Drop in pictures (screenshots, photos of pages or whiteboards) and Ovyl reads their text into one note, a section per picture, in file name order.
 
 Everything runs on the Mac. The app has no network entitlement.
 
@@ -14,11 +18,19 @@ Everything runs on the Mac. The app has no network entitlement.
 |------|--------|---------------------|
 | Speech | Whisper large-v3 turbo (WhisperKit, Core ML) | Bundled in the app (about 650 MB) |
 | Speech fallback | Apple SpeechAnalyzer | Built into macOS |
+| Music and singing | Apple SoundAnalysis classifier | Built into macOS |
 | On-screen text | Apple Vision text recognition | Built into macOS |
+| Text in pictures | Apple Vision document recognition | Built into macOS |
 | Title, summary, headings | Apple Foundation Models | Built into macOS (Apple Intelligence) |
 
 - **Speech:** Automatic mode uses Whisper first (most accurate, about 100 languages, detects the language), then Apple Speech if Whisper can't run. Settings can put Apple Speech first.
-- **On-screen text:** frames are sampled every second (every 2 to 3 seconds for long videos), unchanged frames are skipped, and text is grouped into moments such as a slide. Repeats and burned-in captions are removed.
+- **Music:** the soundtrack is classified in 3-second windows. Singing, or music with little talking, is silenced before Whisper runs and left out of the transcript; the note marks where it played. Talking over background music is still transcribed. Settings can turn this off.
+- **On-screen text:** frames are sampled every second (every 2 to 3 seconds for long videos) and unchanged frames are skipped. `ScreenTextSorter` then sorts the text:
+  - text on screen in most frames is a watermark (handles, app marks, web addresses, tiny print; dropped) or, if it's a line or two, a title shown once at the top. More unchanging text is the video's content and stays a slide;
+  - short text that changes along with the speech, and accounts for most of what's said while it shows, is a subtitle. The transcript is kept, except where the speech engine was unsure (low confidence) or missed words, or heard nothing while the sound classifier hears talking; there the subtitles are used;
+  - without speech, short text that keeps changing in one place is the captions, and becomes the note's text;
+  - everything else is grouped into moments: slides (with a frame grab) and remarks (a line or two that isn't said).
+- **Pictures:** each picture is read with Vision's document reader, which keeps paragraphs, lists, and tables.
 - **Formatting:** the language model only writes the title, summary, key points, and headings. The transcript is never reworded. Without Apple Intelligence, notes still get slide titles as headings and a title from the opening slide or the file name.
 
 ## Performance
@@ -47,7 +59,7 @@ Requires macOS 27 and Xcode 27, plus `xcodegen` (Homebrew).
 
 ```bash
 ./scripts/fetch-models.sh     # once: downloads the Whisper model into Models/
-./scripts/make-test-video.sh  # once: makes the test video (needs ffmpeg and rsvg-convert)
+./scripts/make-test-video.sh  # once: makes the test videos and pictures (needs ffmpeg and rsvg-convert)
 ./scripts/build.sh            # Debug build in .build/main
 ./scripts/build.sh test       # unit tests and an end-to-end run on the test video
 ./scripts/build.sh release    # Release build, copied to build/Ovyl.app
@@ -56,11 +68,11 @@ Requires macOS 27 and Xcode 27, plus `xcodegen` (Homebrew).
 
 Signing uses `DEVELOPMENT_TEAM` in `project.yml`; set it to your own team ID.
 
-The test video is three narrated slides with a burned-in caption. It isn't in the repository because it's narrated with a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes it on your Mac. `./scripts/build.sh test -only-testing:OvylTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
+The test fixtures are three narrated slides with a burned-in caption, narration with matching subtitles over quiet music, a sung song with captions, captions with no sound, and two pictures. They aren't in the repository because most use a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes them on your Mac. `./scripts/build.sh test -only-testing:OvylTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
 
 ## Layout
 
-- `Ovyl/Pipeline`: audio decoding, Whisper and Apple Speech engines, on-screen text reader, note composer, smart formatter.
+- `Ovyl/Pipeline`: audio decoding, music detection, Whisper and Apple Speech engines, on-screen text reader and sorter, picture reader, note composer, smart formatter.
 - `Ovyl/Model`: the SwiftData `Note`, its JSON content, Markdown export.
 - `Ovyl/UI`: SwiftUI views.
 - `OvylTests`: Swift Testing unit tests and `PipelineIntegrationTests`.

@@ -3,7 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// A finished note, laid out for reading: video, title, summary, key points,
-/// then the transcript in sections with on-screen text where it appeared.
+/// then the transcript in sections with on-screen text and music where they
+/// came up. A note from pictures shows each picture above its text.
 struct NoteDocumentView: View {
     @Environment(ProcessingCenter.self) private var center
     @Bindable var note: Note
@@ -21,7 +22,7 @@ struct NoteDocumentView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if showsVideo {
+                if showsVideo, isVideo {
                     videoArea.padding(.bottom, 32)
                 }
                 if isEditing { editor } else { reader }
@@ -38,7 +39,7 @@ struct NoteDocumentView: View {
         .toolbar { toolbar }
         .onAppear {
             reloadContent()
-            if showsVideo { player.load(note) }
+            if showsVideo, isVideo { player.load(note) }
         }
         .onDisappear {
             if isEditing { commitEdits() }
@@ -48,6 +49,7 @@ struct NoteDocumentView: View {
             if !isEditing { reloadContent() }
         }
         .onChange(of: showsVideo) { _, shows in
+            guard isVideo else { return }
             if shows { player.load(note) } else { player.unload() }
         }
         .fileImporter(isPresented: $isLocating, allowedContentTypes: [.audiovisualContent]) { result in
@@ -59,6 +61,8 @@ struct NoteDocumentView: View {
             player.reload(note)
         }
     }
+
+    private var isVideo: Bool { note.kind == .video }
 
     // MARK: Reading
 
@@ -79,6 +83,21 @@ struct NoteDocumentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.yellow.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .padding(.top, 20)
+        }
+
+        if !content.screenTitles.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("On screen throughout", systemImage: "rectangle.and.text.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(Array(content.screenTitles.enumerated()), id: \.offset) { _, title in
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 20)
         }
 
         if let summary = content.summary {
@@ -124,7 +143,9 @@ struct NoteDocumentView: View {
         }
 
         if timeline.isEmpty {
-            Text("No speech or on-screen text was found in this video.")
+            Text(content.isPictures
+                 ? "No text was found in the pictures."
+                 : "No speech or on-screen text was found in this video.")
                 .foregroundStyle(.secondary)
                 .padding(.top, 32)
         }
@@ -137,22 +158,34 @@ struct NoteDocumentView: View {
                         .textSelection(.enabled)
                         .padding(.bottom, 2)
                 }
+                if let picture = section.picture {
+                    PictureView(picture: picture, folder: note.thumbnailsFolder)
+                    if section.entries.isEmpty {
+                        Text("No text was found in this picture.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 ForEach(section.entries) { entry in
                     switch entry {
                     case .paragraph(let paragraph):
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            TimestampButton(seconds: paragraph.start) { play(at: paragraph.start) }
-                                .frame(width: gutter - 12, alignment: .trailing)
-                            Text(paragraph.text)
-                                .font(.system(size: 15))
-                                .lineSpacing(5)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        if paragraph.source == .picture {
+                            paragraphText(paragraph.text)
+                        } else {
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                TimestampButton(seconds: paragraph.start) { play(at: paragraph.start) }
+                                    .frame(width: gutter - 12, alignment: .trailing)
+                                paragraphText(paragraph.text)
+                            }
+                            .padding(.leading, -gutter)
                         }
-                        .padding(.leading, -gutter)
                     case .screen(let moment):
-                        ScreenMomentCard(moment: moment, folder: note.thumbnailsFolder) { play(at: moment.start) }
+                        if moment.kind == .commentary {
+                            CommentaryRow(moment: moment) { play(at: moment.start) }
+                        } else {
+                            ScreenMomentCard(moment: moment, folder: note.thumbnailsFolder) { play(at: moment.start) }
+                        }
+                    case .music(let span):
+                        MusicRow(span: span) { play(at: span.start) }
                     }
                 }
             }
@@ -160,17 +193,31 @@ struct NoteDocumentView: View {
         }
     }
 
+    private func paragraphText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 15))
+            .lineSpacing(5)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var metadata: some View {
         FlowLayout(spacing: 16, lineSpacing: 6) {
             Label(note.createdAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-            if note.duration > 0 {
+            if content.isPictures {
+                Label(content.pictures.count == 1 ? "1 picture" : "\(content.pictures.count) pictures", systemImage: "photo.on.rectangle")
+            } else if note.duration > 0 {
                 Label(TimeFormat.duration(note.duration), systemImage: "clock")
             }
             if let code = content.language, let name = Locale.current.localizedString(forLanguageCode: code) {
                 Label(name, systemImage: "globe")
             }
             if let engine = content.engine {
-                Label(engine, systemImage: "waveform")
+                Label(engine, systemImage: content.paragraphs.contains { $0.source == nil } ? "waveform" : "captions.bubble")
+            }
+            if !content.music.isEmpty {
+                Label("Music left out", systemImage: "music.note")
             }
             if content.formattedWithAI {
                 Label("Apple Intelligence", systemImage: "sparkles")
@@ -212,6 +259,7 @@ struct NoteDocumentView: View {
     }
 
     private func play(at seconds: TimeInterval) {
+        guard isVideo else { return }
         if !showsVideo {
             showsVideo = true
             player.load(note)
@@ -261,7 +309,7 @@ struct NoteDocumentView: View {
                     .editableField()
                 ForEach($section.paragraphs) { $paragraph in
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(TimeFormat.clock(paragraph.start))
+                        Text(paragraph.source == .picture ? "" : TimeFormat.clock(paragraph.start))
                             .font(.system(size: 12, weight: .medium).monospacedDigit())
                             .foregroundStyle(.tertiary)
                             .frame(width: gutter - 12, alignment: .trailing)
@@ -294,7 +342,8 @@ struct NoteDocumentView: View {
             content.sections[index].heading = content.sections[index].heading.trimmed
             content.sections[index].paragraphs.removeAll { $0.text.trimmed.isEmpty }
         }
-        content.sections.removeAll { $0.paragraphs.isEmpty && $0.heading.isEmpty }
+        // A picture's section stays even without text, so the picture does.
+        content.sections.removeAll { $0.paragraphs.isEmpty && $0.heading.isEmpty && $0.picture == nil }
         let title = draftTitle.trimmed
         if !title.isEmpty, title != note.title {
             note.title = title
@@ -315,10 +364,12 @@ struct NoteDocumentView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            Toggle(isOn: $showsVideo) {
-                Label("Show Video", systemImage: "play.rectangle")
+            if isVideo {
+                Toggle(isOn: $showsVideo) {
+                    Label("Show Video", systemImage: "play.rectangle")
+                }
+                .help(showsVideo ? "Hide the video" : "Show the video")
             }
-            .help(showsVideo ? "Hide the video" : "Show the video")
 
             Button(isEditing ? "Done" : "Edit", systemImage: isEditing ? "checkmark" : "pencil") {
                 toggleEditing()
@@ -452,6 +503,82 @@ struct ScreenMomentCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(.separator.opacity(0.6))
+        }
+    }
+}
+
+/// A short remark shown on screen: no frame grab, just the words.
+struct CommentaryRow: View {
+    let moment: ScreenMoment
+    let play: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.accentColor.opacity(0.55))
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.bubble")
+                    Text("On screen")
+                    TimestampButton(seconds: moment.start, action: play)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                Text(moment.lines.joined(separator: "\n"))
+                    .font(.system(size: 14.5).italic())
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Where a song or other music played; it isn't transcribed.
+struct MusicRow: View {
+    let span: TimeSpan
+    let play: () -> Void
+
+    var body: some View {
+        Button(action: play) {
+            HStack(spacing: 8) {
+                Image(systemName: "music.note")
+                Text("Music")
+                    .fontWeight(.semibold)
+                Text(TimeFormat.range(span.start, span.end))
+                    .monospacedDigit()
+                Text("Not transcribed")
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.quaternary.opacity(0.45), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Play from \(TimeFormat.clock(span.start))")
+    }
+}
+
+/// A picture a note was made from, at a readable size.
+struct PictureView: View {
+    let picture: NotePicture
+    let folder: URL
+
+    var body: some View {
+        if let name = picture.thumbnail, let image = ThumbnailCache.image(at: folder.appending(path: name)) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(.separator)
+                }
+                .frame(maxWidth: .infinity, maxHeight: 520, alignment: .leading)
+                .help(picture.name)
         }
     }
 }

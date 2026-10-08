@@ -26,7 +26,7 @@ nonisolated enum AppleSpeechEngine {
             locale: locale,
             transcriptionOptions: [],
             reportingOptions: [],
-            attributeOptions: [.audioTimeRange]
+            attributeOptions: [.audioTimeRange, .transcriptionConfidence]
         )
 
         // The language model is part of macOS; it's fetched once per language.
@@ -48,7 +48,9 @@ nonisolated enum AppleSpeechEngine {
                 let end = result.range.end.seconds
                 if duration > 0, end.isFinite { progress(min(1, end / duration)) }
                 guard !text.isEmpty, start.isFinite else { continue }
-                segments.append(SpeechSegment(start: start, end: end.isFinite ? end : start, text: text))
+                let confidences = result.text.runs.compactMap(\.transcriptionConfidence)
+                let confidence = confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count)
+                segments.append(SpeechSegment(start: start, end: end.isFinite ? end : start, text: text, confidence: confidence))
             }
             return segments
         }

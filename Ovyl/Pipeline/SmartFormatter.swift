@@ -2,8 +2,8 @@ import Foundation
 import FoundationModels
 
 /// Writes the title, summary, key points and section headings with Apple's
-/// on-device language model. The transcript itself is never rewritten, so
-/// the model can't change what was said; it only organizes it.
+/// on-device language model. The transcript, captions or text from pictures
+/// are never rewritten, so the model can't change them; it only organizes.
 nonisolated enum SmartFormatter {
     enum Availability: Equatable {
         case available
@@ -35,9 +35,9 @@ nonisolated enum SmartFormatter {
     }
 
     static let instructions = """
-        You organize video transcripts into clear, well-structured notes.
-        Use only facts from the transcript and the on-screen text. Never add information, names, or numbers.
-        Write every title, heading, summary, and key point in the same language as the transcript.
+        You organize video transcripts, captions, and text read from pictures into clear, well-structured notes.
+        Use only facts from the text you are given. Never add information, names, or numbers.
+        Write every title, heading, summary, and key point in the same language as the text.
         A heading names the topic of its section, like a chapter title in a book.
         """
 
@@ -48,6 +48,8 @@ nonisolated enum SmartFormatter {
         duration: TimeInterval,
         paragraphs: [Paragraph],
         moments: [TrackedMoment],
+        screenTitles: [String] = [],
+        fromCaptions: Bool = false,
         language: String?,
         progress: @Sendable (Double) -> Void
     ) async -> Outline? {
@@ -57,10 +59,23 @@ nonisolated enum SmartFormatter {
 
         // Room for the instructions, the response schema and the response.
         let budget = max(1200, model.contextSize - 1400)
-        let header = "Video: \"\(fileName)\", \(TimeFormat.duration(duration))."
+        var header = "Video: \"\(fileName)\", \(TimeFormat.duration(duration))."
+        if !screenTitles.isEmpty {
+            header += "\nShown on screen throughout: \(screenTitles.map { "\"\($0)\"" }.joined(separator: ", "))."
+        }
+        if fromCaptions {
+            header += "\nThe video has no speech. Its message is in the captions on screen, given below as the transcript."
+        }
 
         do {
             if paragraphs.isEmpty {
+                guard !moments.isEmpty else {
+                    let overview = try await respond(
+                        GeneratedOverview.self,
+                        prompt: "\(header)\n\nWrite a title, a short summary, and key points for notes about this video."
+                    )
+                    return Outline(title: overview.title, summary: overview.summary, keyPoints: clean(overview.keyPoints))
+                }
                 let screen = screenText(moments, maxTokens: budget / 3 * 2)
                 let overview = try await respond(
                     GeneratedOverview.self,
@@ -123,6 +138,36 @@ nonisolated enum SmartFormatter {
                 keyPoints: clean(overview.keyPoints),
                 sections: sections
             )
+        } catch {
+            return nil
+        }
+    }
+
+    /// A title, summary and key points for a note made from pictures.
+    static func overview(ofPictures sections: [NoteSection], language: String?, progress: @Sendable (Double) -> Void) async -> Outline? {
+        let model = SystemLanguageModel.default
+        guard case .available = model.availability else { return nil }
+        if let language, !model.supportsLocale(Locale(identifier: language)) { return nil }
+        let budget = max(1200, model.contextSize - 1400)
+        let limit = budget * 2 * 3
+        var text = ""
+        for (index, section) in sections.enumerated() {
+            let part = "[Picture \(index + 1)\(section.heading.isEmpty ? "" : ": \(section.heading)")]\n"
+                + section.paragraphs.map(\.text).joined(separator: "\n") + "\n"
+            if text.count + part.count > limit { break }
+            text += part
+        }
+        progress(0.2)
+        do {
+            let overview = try await respond(
+                GeneratedPictureOverview.self,
+                prompt: """
+                Text read from \(sections.count == 1 ? "a picture" : "\(sections.count) pictures"), in order:
+                \(text)
+                Write a title, a short summary, and key points for notes about \(sections.count == 1 ? "this picture" : "these pictures").
+                """
+            )
+            return Outline(title: overview.title, summary: overview.summary, keyPoints: clean(overview.keyPoints))
         } catch {
             return nil
         }
@@ -244,6 +289,16 @@ struct GeneratedPart {
     var sections: [GeneratedSection]
     @Guide(description: "Two sentences summarizing this part")
     var summary: String
+}
+
+@Generable
+struct GeneratedPictureOverview {
+    @Guide(description: "Two or three sentences summarizing what the pictures show, without calling them a video")
+    var summary: String
+    @Guide(description: "The main takeaways, each one short sentence", .count(2...6))
+    var keyPoints: [String]
+    @Guide(description: "A specific title for the notes, 3 to 8 words, without quotes")
+    var title: String
 }
 
 @Generable

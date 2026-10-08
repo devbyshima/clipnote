@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(PipelineOptions.readsScreenTextKey) private var readsScreenText = true
     @AppStorage(PipelineOptions.frameIntervalKey) private var frameInterval = 1.0
     @AppStorage(PipelineOptions.smartFormattingKey) private var smartFormatting = true
+    @AppStorage(PipelineOptions.skipsMusicKey) private var skipsMusic = true
 
     /// Languages both Whisper and most Macs handle well, by ISO code.
     private static let languages = [
@@ -27,6 +28,8 @@ struct SettingsView: View {
                         Text(item.name).tag(item.code)
                     }
                 }
+                Toggle("Leave out songs and music", isOn: $skipsMusic)
+                    .help("Singing and music are recognized on this Mac and marked in the note instead of transcribed. Talking over background music is still transcribed.")
                 LabeledContent("Whisper model") {
                     Text(whisperStatus).foregroundStyle(.secondary)
                 }
@@ -40,7 +43,7 @@ struct SettingsView: View {
                 Text(engineFootnote).foregroundStyle(.secondary)
             }
 
-            Section("On-Screen Text") {
+            Section {
                 Toggle("Read text that appears on screen", isOn: $readsScreenText)
                 Picker("Check the screen", selection: $frameInterval) {
                     Text("Every half second").tag(0.5)
@@ -48,6 +51,11 @@ struct SettingsView: View {
                     Text("Every 2 seconds").tag(2.0)
                 }
                 .disabled(!readsScreenText)
+            } header: {
+                Text("On-Screen Text")
+            } footer: {
+                Text("Subtitles that repeat the speech appear once: the transcript, or the subtitles where speech was unclear. Without speech, captions become the note's text.")
+                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -59,7 +67,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Label("Everything runs on this Mac. Videos, transcripts, and notes never leave your computer.", systemImage: "lock.fill")
+                Label("Everything runs on this Mac. Videos, pictures, transcripts, and notes never leave your computer.", systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
             }
         }

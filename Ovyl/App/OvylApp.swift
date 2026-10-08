@@ -17,7 +17,7 @@ struct OvylApp: App {
         .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Import Video…") { center.isImporterPresented = true }
+                Button("Import Video or Pictures…") { center.isImporterPresented = true }
                     .keyboardShortcut("o")
             }
         }
@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessingCenter.shared.start()
     }
 
-    /// Videos opened from Finder ("Open With" or dropped on the Dock icon).
+    /// Videos and pictures opened from Finder ("Open With" or dropped on the Dock icon).
     func application(_ application: NSApplication, open urls: [URL]) {
         ProcessingCenter.shared.importFiles(urls)
     }

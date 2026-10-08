@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 /// The shape of a note before its paragraphs are filled in: a title, an
 /// optional summary and key points, and where each section starts.
@@ -14,13 +15,16 @@ nonisolated struct Outline: Sendable, Equatable {
     var sections: [SectionStart] = []
 }
 
-/// Turns transcript segments and on-screen text into a finished note.
+/// Turns transcript segments and on-screen text, or the text read from
+/// pictures, into a finished note.
 nonisolated enum NoteComposer {
     struct Input: Sendable {
         var fileName: String
         var duration: TimeInterval
         var segments: [SpeechSegment]
         var moments: [TrackedMoment]
+        var screenTitles: [String] = []
+        var music: [TimeSpan] = []
         var language: String?
         var engine: String?
         var useSmartFormatting: Bool
@@ -34,29 +38,36 @@ nonisolated enum NoteComposer {
 
     static func compose(_ input: Input, progress: @Sendable (Double) -> Void) async -> Output {
         let paragraphs = ParagraphBuilder.build(input.segments, language: input.language)
-        let moments = CaptionFilter.removeCaptions(from: input.moments, transcript: input.segments)
+        let moments = input.moments
+        let fromCaptions = !paragraphs.isEmpty && paragraphs.allSatisfy { $0.source == .subtitles }
 
         var outline: Outline?
-        if input.useSmartFormatting, !(paragraphs.isEmpty && moments.isEmpty) {
+        if input.useSmartFormatting, !(paragraphs.isEmpty && moments.isEmpty && input.screenTitles.isEmpty) {
             outline = await SmartFormatter.outline(
                 fileName: input.fileName,
                 duration: input.duration,
                 paragraphs: paragraphs,
                 moments: moments,
+                screenTitles: input.screenTitles,
+                fromCaptions: fromCaptions,
                 language: input.language,
                 progress: progress
             )
         }
         let formattedWithAI = outline != nil
-        var resolved = outline ?? fallbackOutline(fileName: input.fileName, paragraphs: paragraphs, moments: moments)
+        var resolved = outline ?? fallbackOutline(
+            fileName: input.fileName, paragraphs: paragraphs, moments: moments, screenTitles: input.screenTitles
+        )
         resolved.sections = validSections(resolved.sections, paragraphCount: paragraphs.count)
         if resolved.title.isEmpty { resolved.title = Note.title(fromFileName: input.fileName) }
 
         let content = NoteContent(
             summary: resolved.summary.flatMap { $0.isEmpty ? nil : $0 },
             keyPoints: resolved.keyPoints,
-            sections: assemble(paragraphs, starts: resolved.sections),
+            sections: assemble(paragraphs, starts: resolved.sections, defaultHeading: fromCaptions ? "Captions" : "Transcript"),
             screenMoments: moments.map(screenMoment),
+            screenTitles: input.screenTitles,
+            music: input.music,
             language: input.language,
             engine: input.engine,
             formattedWithAI: formattedWithAI,
@@ -66,13 +77,62 @@ nonisolated enum NoteComposer {
         return Output(title: resolved.title, content: content)
     }
 
-    /// Without Apple Intelligence: a title from the opening slide or the file
-    /// name, and slide titles as section headings when the video has slides.
-    static func fallbackOutline(fileName: String, paragraphs: [Paragraph], moments: [TrackedMoment]) -> Outline {
+    struct Picture: Sendable {
+        /// The original file name.
+        var name: String
+        var thumbnail: String?
+        var page: PictureReader.Page
+    }
+
+    /// A note from pictures: one section per picture with its text, in order.
+    static func compose(
+        pictures: [Picture],
+        useSmartFormatting: Bool,
+        notice: String?,
+        progress: @Sendable (Double) -> Void
+    ) async -> Output {
+        let several = pictures.count > 1
+        let sections = pictures.enumerated().map { index, picture in
+            NoteSection(
+                heading: tidyHeading(picture.page.title ?? (several ? "Picture \(index + 1)" : "")),
+                paragraphs: picture.page.paragraphs.map { Paragraph(start: 0, end: 0, text: $0, source: .picture) },
+                picture: index
+            )
+        }
+        let text = sections.flatMap { $0.paragraphs.map(\.text) }.joined(separator: "\n")
+        let language = TextLanguage.detect(text)
+
+        var outline: Outline?
+        if useSmartFormatting, !text.isEmpty {
+            outline = await SmartFormatter.overview(ofPictures: sections, language: language, progress: progress)
+        }
+        let fileTitle = Note.title(fromFileName: pictures.first?.name ?? "")
+        let readTitle = pictures.lazy.compactMap(\.page.title).first { (3...80).contains($0.count) }
+        let title = outline.map(\.title).flatMap { $0.isEmpty ? nil : $0 } ?? readTitle ?? fileTitle
+
+        let content = NoteContent(
+            summary: outline?.summary.flatMap { $0.isEmpty ? nil : $0 },
+            keyPoints: outline?.keyPoints ?? [],
+            sections: sections,
+            pictures: pictures.map { NotePicture(name: $0.name, thumbnail: $0.thumbnail) },
+            language: language,
+            formattedWithAI: outline != nil,
+            notice: notice
+        )
+        progress(1)
+        return Output(title: title, content: content)
+    }
+
+    /// Without Apple Intelligence: a title from text shown throughout the
+    /// video, the opening slide, or the file name, and slide titles as
+    /// section headings when the video has slides.
+    static func fallbackOutline(fileName: String, paragraphs: [Paragraph], moments: [TrackedMoment], screenTitles: [String] = []) -> Outline {
         let titled = moments.compactMap { moment in titleLine(of: moment).map { (moment, $0) } }
 
         var title = Note.title(fromFileName: fileName)
-        if let first = titled.first, first.0.start <= 15, (3...80).contains(first.1.count) {
+        if let shown = screenTitles.first(where: { (3...80).contains($0.count) }) {
+            title = shown
+        } else if let first = titled.first, first.0.start <= 15, (3...80).contains(first.1.count) {
             title = first.1
         }
 
@@ -102,10 +162,10 @@ nonisolated enum NoteComposer {
         return result
     }
 
-    static func assemble(_ paragraphs: [Paragraph], starts: [Outline.SectionStart]) -> [NoteSection] {
+    static func assemble(_ paragraphs: [Paragraph], starts: [Outline.SectionStart], defaultHeading: String = "Transcript") -> [NoteSection] {
         guard !paragraphs.isEmpty else { return [] }
         guard !starts.isEmpty else {
-            return [NoteSection(heading: "Transcript", paragraphs: paragraphs)]
+            return [NoteSection(heading: defaultHeading, paragraphs: paragraphs)]
         }
         return starts.indices.map { i in
             let from = starts[i].paragraph
@@ -120,7 +180,8 @@ nonisolated enum NoteComposer {
             end: moment.end,
             lines: moment.lines.map(\.text),
             title: titleLine(of: moment),
-            thumbnail: moment.thumbnail
+            thumbnail: moment.thumbnail,
+            kind: moment.kind
         )
     }
 
@@ -152,13 +213,17 @@ nonisolated enum ParagraphBuilder {
         let unspaced = unspacedLanguages.contains(language ?? "")
         var paragraphs: [Paragraph] = []
         var texts: [String] = []
+        var sources = Set<TextSource>()
         var start: TimeInterval = 0, end: TimeInterval = 0, words = 0
 
         func flush() {
             guard !texts.isEmpty else { return }
             let text = tidy(texts.joined(separator: unspaced ? "" : " "))
-            if !text.isEmpty { paragraphs.append(Paragraph(start: start, end: end, text: text)) }
+            // Marked only when all of it came from one place other than speech.
+            let source = sources.count == 1 && sources.first != .speech ? sources.first : nil
+            if !text.isEmpty { paragraphs.append(Paragraph(start: start, end: end, text: text, source: source)) }
             texts = []
+            sources = []
             words = 0
         }
 
@@ -172,6 +237,7 @@ nonisolated enum ParagraphBuilder {
             }
             if texts.isEmpty { start = segment.start }
             texts.append(text)
+            sources.insert(segment.source)
             end = max(end, segment.end)
             words += unspaced ? text.count / 2 : text.split(separator: " ").count
         }
@@ -191,22 +257,13 @@ nonisolated enum ParagraphBuilder {
     }
 }
 
-nonisolated enum CaptionFilter {
-    /// Drops burned-in captions: lines low in the frame whose words were
-    /// also spoken around the same time. They'd repeat the transcript.
-    static func removeCaptions(from moments: [TrackedMoment], transcript: [SpeechSegment]) -> [TrackedMoment] {
-        guard !transcript.isEmpty else { return moments }
-        return moments.compactMap { moment in
-            let spoken = transcript.filter { $0.end >= moment.start - 6 && $0.start <= moment.end + 6 }
-            let vocabulary = Set(spoken.flatMap { Similarity.normalize($0.text).split(separator: " ").map(String.init) })
-            var kept = moment
-            kept.lines = moment.lines.filter { line in
-                let wordCount = line.key.split(separator: " ").count
-                let isCaption = line.midY < 0.33 && wordCount >= 3
-                    && Similarity.wordCoverage(of: line.text, in: vocabulary) >= 0.7
-                return !isCaption
-            }
-            return kept.lines.isEmpty ? nil : kept
-        }
+nonisolated enum TextLanguage {
+    /// The main language of some text as an ISO code ("en"), when it's clear.
+    static func detect(_ text: String) -> String? {
+        guard text.count >= 12 else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let language = recognizer.dominantLanguage, language != .undetermined else { return nil }
+        return language.rawValue
     }
 }

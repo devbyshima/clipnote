@@ -173,7 +173,9 @@ actor WhisperEngine {
                         let end = min(chunkEnd, offset + Double(max(segment.end, segment.start)))
                         let voiced = WhisperCleanup.voicedShare(energies, from: start, to: end)
                         if WhisperCleanup.isPhantomPhrase(text) && voiced < 0.4 { continue }
-                        segments.append(SpeechSegment(start: start, end: end, text: text))
+                        // Average log-probability per token, as a 0 to 1 confidence.
+                        let confidence = Double(exp(segment.avgLogprob))
+                        segments.append(SpeechSegment(start: start, end: end, text: text, confidence: confidence))
                     }
                 }
             }

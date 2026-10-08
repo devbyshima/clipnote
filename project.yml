@@ -83,6 +83,10 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.movie, public.audiovisual-content]
+          - CFBundleTypeName: Picture
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.image]
 
   OvylTests:
     type: bundle.unit-test

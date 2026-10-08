@@ -36,15 +36,15 @@ struct ContentView: View {
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search notes")
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button("Import Video", systemImage: "plus") {
+                Button("Import", systemImage: "plus") {
                     center.isImporterPresented = true
                 }
-                .help("Import a video (⌘O)")
+                .help("Import a video or pictures (⌘O)")
             }
         }
         .fileImporter(
             isPresented: $center.isImporterPresented,
-            allowedContentTypes: [.audiovisualContent],
+            allowedContentTypes: [.audiovisualContent, .image],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result { center.importFiles(urls) }

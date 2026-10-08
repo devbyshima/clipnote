@@ -3,6 +3,7 @@ import Foundation
 nonisolated enum ClipError: LocalizedError, Equatable {
     case fileMissing
     case notMedia
+    case notPicture
     case unreadableAudio
     case whisperModelMissing
     case appleSpeechUnavailable
@@ -11,9 +12,11 @@ nonisolated enum ClipError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .fileMissing:
-            "The video file can't be found. It may have been moved, renamed, or deleted."
+            "The file can't be found. It may have been moved, renamed, or deleted."
         case .notMedia:
             "This file has no audio or video Ovyl can read."
+        case .notPicture:
+            "None of the pictures could be opened. They may have been moved, renamed, or deleted."
         case .unreadableAudio:
             "The video's audio couldn't be decoded."
         case .whisperModelMissing:

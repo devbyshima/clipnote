@@ -33,7 +33,7 @@ struct ProcessingView: View {
                 Text(note.displayTitle)
                     .font(.title2.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(note.status == .queued ? "Waiting for the video ahead of it" : note.stage)
+                Text(note.status == .queued ? "Waiting for the note ahead of it" : note.stage)
                     .foregroundStyle(.secondary)
                     .contentTransition(.opacity)
                     .animation(.default, value: note.stage)
@@ -67,12 +67,14 @@ struct FailedView: View {
         ContentUnavailableView {
             Label("Couldn't Make This Note", systemImage: "exclamationmark.triangle")
         } description: {
-            Text(note.errorMessage ?? "Something went wrong while processing this video.")
+            Text(note.errorMessage ?? "Something went wrong while making this note.")
         } actions: {
             HStack {
                 Button("Try Again") { center.enqueue(note) }
                     .buttonStyle(.borderedProminent)
-                Button("Locate Video…") { isLocating = true }
+                if note.kind == .video {
+                    Button("Locate Video…") { isLocating = true }
+                }
             }
             .controlSize(.large)
         }
@@ -103,10 +105,10 @@ struct WelcomeView: View {
             }
 
             VStack(spacing: 10) {
-                Text(hasNotes ? "Select a note, or drop a new video" : "Drop a video to make a note")
+                Text(hasNotes ? "Select a note, or drop a video or pictures" : "Drop a video or pictures to make a note")
                     .font(.largeTitle.weight(.bold))
                     .multilineTextAlignment(.center)
-                Text("Ovyl transcribes what's said, reads any text that appears on screen, and writes it up as a clean, organized note.")
+                Text("Ovyl transcribes what's said, reads subtitles and other text on screen or in pictures, leaves songs out, and writes it all up as a clean, organized note.")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -116,7 +118,7 @@ struct WelcomeView: View {
             Button {
                 center.isImporterPresented = true
             } label: {
-                Label("Choose Video…", systemImage: "plus")
+                Label("Choose Files…", systemImage: "plus")
                     .padding(.horizontal, 6)
             }
             .buttonStyle(.borderedProminent)
@@ -124,7 +126,7 @@ struct WelcomeView: View {
 
             HStack(spacing: 12) {
                 Feature(symbol: "waveform", title: "Transcribes speech")
-                Feature(symbol: "text.viewfinder", title: "Reads on-screen text")
+                Feature(symbol: "text.viewfinder", title: "Reads text in videos and pictures")
                 Feature(symbol: "lock.fill", title: "Stays on this Mac")
             }
             .padding(.top, 8)

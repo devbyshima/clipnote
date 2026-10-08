@@ -12,16 +12,32 @@ nonisolated struct ScreenLine: Sendable, Equatable {
     /// Line height as a fraction of the frame height.
     var height: Double
     var isTitle: Bool
+    /// Horizontal centre, 0 at the left of the frame and 1 at the right.
+    var midX: Double
     /// Normalized text used for matching.
     let key: String
 
-    init(text: String, midY: Double, height: Double, isTitle: Bool = false) {
+    init(text: String, midY: Double, height: Double, isTitle: Bool = false, midX: Double = 0.5) {
         self.text = text
         self.midY = midY
         self.height = height
         self.isTitle = isTitle
+        self.midX = midX
         self.key = Similarity.normalize(text)
     }
+}
+
+/// The text read in one sampled frame.
+nonisolated struct FrameText: Sendable, Equatable {
+    var time: TimeInterval
+    var lines: [ScreenLine]
+}
+
+/// Everything read from a video's frames.
+nonisolated struct ScreenReading: Sendable {
+    var frames: [FrameText] = []
+    /// Seconds between sampled frames.
+    var interval: TimeInterval = 1
 }
 
 /// A stretch of video where roughly the same text stayed on screen.
@@ -30,20 +46,22 @@ nonisolated struct TrackedMoment: Sendable, Equatable {
     var end: TimeInterval
     var lines: [ScreenLine]
     var thumbnail: String?
+    var kind: ScreenMoment.Kind = .slide
+    /// The last sampled frame that showed this moment's text.
+    var lastSeen: TimeInterval?
 }
 
-/// Samples frames, reads their text with Vision, and groups what it reads
-/// into moments (a slide, a title card, a code listing).
+/// Samples frames and reads their text with Vision. `ScreenTextSorter`
+/// then works out what the text is: subtitles, a title, slides, remarks.
 nonisolated enum ScreenTextReader {
     @concurrent static func read(
         asset: AVURLAsset,
         duration: TimeInterval,
         interval baseInterval: TimeInterval,
-        thumbnailsFolder: URL,
         progress: @Sendable (Double) -> Void
-    ) async throws -> [TrackedMoment] {
+    ) async throws -> ScreenReading {
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        guard duration > 0, !videoTracks.isEmpty else { return [] }
+        guard duration > 0, !videoTracks.isEmpty else { return ScreenReading() }
 
         // Longer videos are sampled less often so a two-hour talk stays quick,
         // and less often again when the Mac is saving power or running hot.
@@ -63,13 +81,10 @@ nonisolated enum ScreenTextReader {
         generator.requestedTimeToleranceBefore = tolerance
         generator.requestedTimeToleranceAfter = tolerance
 
-        try? FileManager.default.createDirectory(at: thumbnailsFolder, withIntermediateDirectories: true)
-
-        var tracker = MomentTracker()
+        var frames: [FrameText] = []
         var lastSignature: [Float]?
         var lastReadTime = -TimeInterval.infinity
         var lastLines: [ScreenLine] = []
-        var pendingImage: CGImage?
         var done = 0
 
         for await element in generator.images(for: times) {
@@ -84,33 +99,47 @@ nonisolated enum ScreenTextReader {
             let signature = FrameSignature.make(image)
             if let lastSignature, let signature, time - lastReadTime < 6,
                FrameSignature.difference(lastSignature, signature) < 0.002 {
-                if tracker.observe(lines: lastLines, at: time) == .continued { pendingImage = image }
+                frames.append(FrameText(time: time, lines: lastLines))
                 continue
             }
             lastSignature = signature
             lastReadTime = time
 
-            let lines = try await recognize(image)
-            lastLines = lines
-            switch tracker.observe(lines: lines, at: time) {
-            case .started(let closed):
-                if let closed { saveThumbnail(of: closed, image: pendingImage, folder: thumbnailsFolder, tracker: &tracker) }
-                pendingImage = image
-            case .continued:
-                pendingImage = image
-            case .ended(let closed):
-                saveThumbnail(of: closed, image: pendingImage, folder: thumbnailsFolder, tracker: &tracker)
-                pendingImage = nil
-            case .none:
-                break
-            }
-        }
-
-        if let closed = tracker.finish(at: duration) {
-            saveThumbnail(of: closed, image: pendingImage, folder: thumbnailsFolder, tracker: &tracker)
+            lastLines = try await recognize(image)
+            frames.append(FrameText(time: time, lines: lastLines))
         }
         progress(1)
-        return MomentTracker.removeRepeats(tracker.moments)
+        return ScreenReading(frames: frames, interval: interval)
+    }
+
+    /// Saves a frame grab for each slide, taken from the last moment it was
+    /// on screen, when a slide that builds up line by line is complete.
+    @concurrent static func saveThumbnails(
+        for moments: [TrackedMoment],
+        asset: AVURLAsset,
+        folder: URL
+    ) async -> [TrackedMoment] {
+        var result = moments
+        let wanted = moments.indices.filter { moments[$0].kind == .slide }
+        guard !wanted.isEmpty else { return result }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 1280, height: 1280)
+        let tolerance = CMTime(seconds: 0.2, preferredTimescale: 600)
+        generator.requestedTimeToleranceBefore = tolerance
+        generator.requestedTimeToleranceAfter = tolerance
+
+        var pending = wanted.map { (index: $0, time: CMTime(seconds: moments[$0].lastSeen ?? moments[$0].end, preferredTimescale: 600)) }
+        for await element in generator.images(for: pending.map(\.time)) {
+            guard case .success(let requested, let image, _) = element,
+                  let position = pending.firstIndex(where: { $0.time == requested })
+            else { continue }
+            let index = pending.remove(at: position).index
+            if let name = saveThumbnail(image, folder: folder) { result[index].thumbnail = name }
+        }
+        return result
     }
 
     static func recognize(_ image: CGImage) async throws -> [ScreenLine] {
@@ -128,21 +157,20 @@ nonisolated enum ScreenTextReader {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard text.filter({ $0.isLetter || $0.isNumber }).count >= 2 else { return nil }
             let box = observation.boundingBox.cgRect
-            return ScreenLine(text: text, midY: box.midY, height: box.height, isTitle: observation.isTitle)
+            return ScreenLine(text: text, midY: box.midY, height: box.height, isTitle: observation.isTitle, midX: box.midX)
         }
         // Reading order: top to bottom.
         return lines.sorted { $0.midY > $1.midY }
     }
 
-    private static func saveThumbnail(of index: Int, image: CGImage?, folder: URL, tracker: inout MomentTracker) {
-        guard let image, tracker.moments.indices.contains(index) else { return }
-        let name = "\(UUID().uuidString).jpg"
+    /// Writes a JPEG copy of `image`, at most `maxWidth` wide, and returns its file name.
+    static func saveThumbnail(_ image: CGImage, folder: URL, name: String = "\(UUID().uuidString).jpg", maxWidth: Int = 640) -> String? {
         let url = folder.appending(path: name)
-        guard let small = downscale(image, maxWidth: 640),
+        guard let small = downscale(image, maxWidth: maxWidth),
               let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
-        else { return }
-        CGImageDestinationAddImage(destination, small, [kCGImageDestinationLossyCompressionQuality: 0.78] as CFDictionary)
-        if CGImageDestinationFinalize(destination) { tracker.moments[index].thumbnail = name }
+        else { return nil }
+        CGImageDestinationAddImage(destination, small, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? name : nil
     }
 
     private static func downscale(_ image: CGImage, maxWidth: Int) -> CGImage? {
@@ -192,6 +220,7 @@ nonisolated struct MomentTracker {
                 moment.lines.append(line)
             }
             moment.end = time
+            moment.lastSeen = time
             current = moment
             return .continued
         }
@@ -200,7 +229,7 @@ nonisolated struct MomentTracker {
             moments.append(finished)
             closed = moments.count - 1
         }
-        current = TrackedMoment(start: time, end: time, lines: lines)
+        current = TrackedMoment(start: time, end: time, lines: lines, lastSeen: time)
         return .started(closed: closed)
     }
 
@@ -308,8 +337,32 @@ nonisolated enum Similarity {
 
     /// Share of `text`'s words that also appear in `reference`.
     static func wordCoverage(of text: String, in reference: Set<String>) -> Double {
-        let words = normalize(text).split(separator: " ").map(String.init)
+        let words = words(text)
         guard !words.isEmpty else { return 0 }
         return Double(words.filter { reference.contains($0) }.count) / Double(words.count)
+    }
+
+    static func words(_ text: String) -> [String] {
+        normalize(text).split(separator: " ").map(String.init)
+    }
+
+    /// Equal, or long enough that a misread letter or two doesn't matter.
+    static func isSameWord(_ a: String, _ b: String) -> Bool {
+        a == b || (a.count >= 4 && b.count >= 4 && ratio(a, b) >= 0.75)
+    }
+
+    /// How many words the two share in the same order (not necessarily
+    /// next to each other).
+    static func commonWords(_ a: [String], _ b: [String]) -> Int {
+        guard !a.isEmpty, !b.isEmpty else { return 0 }
+        var previous = [Int](repeating: 0, count: b.count + 1)
+        var current = previous
+        for i in 1...a.count {
+            for j in 1...b.count {
+                current[j] = isSameWord(a[i - 1], b[j - 1]) ? previous[j - 1] + 1 : max(previous[j], current[j - 1])
+            }
+            swap(&previous, &current)
+        }
+        return previous[b.count]
     }
 }

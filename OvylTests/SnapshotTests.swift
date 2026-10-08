@@ -35,6 +35,35 @@ struct SnapshotTests {
         note.duration = result.duration
         note.status = .ready
 
+        // A song with captions, narration with subtitles, and pictures, read
+        // with Apple Speech to keep this quick.
+        var quick = PipelineOptions()
+        quick.engine = .apple
+        quick.language = "en"
+        var made: [String: Note] = [:]
+        for (name, title) in [("captions-music", "sleep-tips.mp4"), ("captions-speech", "morning-routine.mp4")] {
+            let url = try #require(Bundle(for: Token.self).url(forResource: name, withExtension: "mp4", subdirectory: "Fixtures"))
+            let video = Note(sourceName: title, sourceBookmark: try? Note.bookmark(for: url))
+            video.createdAt = .now.addingTimeInterval(-60)
+            context.insert(video)
+            let output = try await ClipPipeline().run(url: url, options: quick, thumbnailsFolder: video.thumbnailsFolder) { _ in }
+            video.title = output.title
+            video.content = output.content
+            video.duration = output.duration
+            video.status = .ready
+            made[name] = video
+        }
+        let pictureURLs = try ["picture-1", "picture-2"].map {
+            try #require(Bundle(for: Token.self).url(forResource: $0, withExtension: "png", subdirectory: "Fixtures"))
+        }
+        let pictures = Note(pictures: pictureURLs.map { ($0.lastPathComponent, try? Note.bookmark(for: $0)) })
+        pictures.createdAt = .now.addingTimeInterval(-120)
+        context.insert(pictures)
+        let read = try await ClipPipeline().run(pictures: pictureURLs, options: quick, thumbnailsFolder: pictures.thumbnailsFolder) { _ in }
+        pictures.title = read.title
+        pictures.content = read.content
+        pictures.status = .ready
+
         let queued = Note(sourceName: "team_offsite-day2.mov", sourceBookmark: nil)
         queued.createdAt = .now.addingTimeInterval(60)
         queued.status = .processing
@@ -56,20 +85,28 @@ struct SnapshotTests {
         UserDefaults.standard.set(false, forKey: "showsVideo")
         try await render(ContentView(initialSelection: note.id), container: container, name: "note-light", dark: false)
         try await render(ContentView(initialSelection: note.id), container: container, name: "note-dark", dark: true)
+        let tall = CGSize(width: 1240, height: 1500)
+        for (name, video) in made {
+            try await render(ContentView(initialSelection: video.id), container: container, name: "note-\(name)", dark: false, size: tall)
+        }
+        try await render(ContentView(initialSelection: pictures.id), container: container, name: "note-pictures", dark: false, size: tall)
+        try await render(ContentView(initialSelection: pictures.id), container: container, name: "note-pictures-dark", dark: true, size: tall)
         try await render(ContentView(initialSelection: queued.id), container: container, name: "processing-light", dark: false)
         try await render(SettingsView(), container: container, name: "settings", dark: false, size: CGSize(width: 540, height: 640))
         // List rows don't show in offscreen captures of the sidebar, so render them alone.
         let rows = VStack(alignment: .leading, spacing: 0) {
-            ForEach([queued, note, failed]) { item in
+            ForEach([queued, note, pictures, failed]) { item in
                 NoteRow(note: item).padding(.horizontal, 14)
                 Divider()
             }
         }
         .frame(width: 290)
         .background(.background)
-        try await render(rows, container: container, name: "rows", dark: false, size: CGSize(width: 290, height: 300))
+        try await render(rows, container: container, name: "rows", dark: false, size: CGSize(width: 290, height: 400))
         UserDefaults.standard.removeObject(forKey: "showsVideo")
-        try? FileManager.default.removeItem(at: note.thumbnailsFolder)
+        for item in [note, pictures] + made.values {
+            try? FileManager.default.removeItem(at: item.thumbnailsFolder)
+        }
     }
 
     private func render(

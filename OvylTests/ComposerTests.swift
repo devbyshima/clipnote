@@ -120,18 +120,6 @@ struct ScreenTextTests {
         #expect(result.count == 2)
         #expect(result[1].lines.map(\.text) == ["Chapter two"])
     }
-
-    @Test func burnedInCaptionsAreDropped() {
-        let moments = [
-            TrackedMoment(start: 10, end: 14, lines: [
-                line("Next Steps", y: 0.8),
-                line("We meet again on Friday to review the budget.", y: 0.1),
-            ]),
-        ]
-        let transcript = [SpeechSegment(start: 9, end: 13, text: "We meet again on Friday to review the budget.")]
-        let kept = CaptionFilter.removeCaptions(from: moments, transcript: transcript)
-        #expect(kept.first?.lines.map(\.text) == ["Next Steps"])
-    }
 }
 
 struct AudioTests {

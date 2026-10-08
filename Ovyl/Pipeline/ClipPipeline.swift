@@ -25,12 +25,15 @@ nonisolated struct PipelineOptions: Sendable {
     var readsScreenText = true
     var frameInterval: TimeInterval = 1
     var smartFormatting = true
+    /// Leaves songs and other music out of the transcript.
+    var skipsMusic = true
 
     static let engineKey = "engine"
     static let languageKey = "language"
     static let readsScreenTextKey = "readsScreenText"
     static let frameIntervalKey = "frameInterval"
     static let smartFormattingKey = "smartFormatting"
+    static let skipsMusicKey = "skipsMusic"
 
     static func fromDefaults(_ defaults: UserDefaults = .standard) -> PipelineOptions {
         var options = PipelineOptions()
@@ -41,6 +44,7 @@ nonisolated struct PipelineOptions: Sendable {
         let interval = defaults.double(forKey: frameIntervalKey)
         options.frameInterval = interval > 0 ? interval : 1
         options.smartFormatting = defaults.object(forKey: smartFormattingKey) as? Bool ?? true
+        options.skipsMusic = defaults.object(forKey: skipsMusicKey) as? Bool ?? true
         return options
     }
 }
@@ -56,8 +60,9 @@ nonisolated struct PipelineResult: Sendable {
     var duration: TimeInterval
 }
 
-/// Runs a video through every step: audio, speech, on-screen text, formatting.
-/// Speech and on-screen text are read at the same time.
+/// Runs a video through every step: audio, music, speech, on-screen text,
+/// formatting. Speech and on-screen text are read at the same time. Pictures
+/// take a shorter path: their text is read and formatted.
 actor ClipPipeline {
     func run(
         url: URL,
@@ -84,29 +89,95 @@ actor ClipPipeline {
         let warmFormatter = options.smartFormatting ? SmartFormatter.prewarmedSession() : nil
 
         async let speech = transcribe(asset: asset, hasAudio: !audioTracks.isEmpty, duration: safeDuration, options: options, board: progress)
-        async let screen = readScreen(asset: asset, enabled: readsScreen, duration: safeDuration, interval: options.frameInterval, folder: thumbnailsFolder, board: progress)
+        async let screen = readScreen(asset: asset, enabled: readsScreen, duration: safeDuration, interval: options.frameInterval, board: progress)
         let transcript = try await speech
-        let moments = try await screen
+        let reading = try await screen
 
         try Task.checkCancellation()
         await progress.set(.formatting, 0)
+        // Sort the screen's text into titles, subtitles, slides and remarks,
+        // and settle on one version where subtitles repeat the speech.
+        let sorted = ScreenTextSorter.sort(.init(
+            frames: reading.frames,
+            interval: reading.interval,
+            duration: safeDuration,
+            transcript: transcript.segments,
+            sound: transcript.sound,
+            music: transcript.music
+        ))
+        let moments = await ScreenTextReader.saveThumbnails(for: sorted.moments, asset: asset, folder: thumbnailsFolder)
+        let fromSpeech = sorted.transcript.contains { $0.source == .speech }
+        let fromSubtitles = sorted.transcript.contains { $0.source == .subtitles }
+        let engine: String? = switch (fromSpeech, fromSubtitles) {
+        case (true, true): transcript.engine.map { "\($0) and subtitles" } ?? "Subtitles"
+        case (false, true): "On-screen captions"
+        default: transcript.engine
+        }
+        let language = transcript.language
+            ?? TextLanguage.detect(sorted.transcript.map(\.text).joined(separator: " "))
+
         let board = progress
         let composed = await NoteComposer.compose(
             .init(
                 fileName: url.lastPathComponent,
                 duration: safeDuration,
-                segments: transcript.segments,
+                segments: sorted.transcript,
                 moments: moments,
-                language: transcript.language,
-                engine: transcript.engine,
+                screenTitles: sorted.titles,
+                music: transcript.music,
+                language: language,
+                engine: engine,
                 useSmartFormatting: options.smartFormatting,
                 notice: transcript.notice
             ),
             progress: { fraction in Task { await board.set(.formatting, fraction) } }
         )
         withExtendedLifetime(warmFormatter) {}
-        Self.removeUnusedThumbnails(in: thumbnailsFolder, keeping: composed.content.screenMoments)
+        Self.removeUnusedThumbnails(in: thumbnailsFolder, keeping: Set(composed.content.screenMoments.compactMap(\.thumbnail)))
         return PipelineResult(title: composed.title, content: composed.content, duration: safeDuration)
+    }
+
+    /// Reads the text in each picture and makes one note from all of them.
+    func run(
+        pictures urls: [URL],
+        options: PipelineOptions,
+        thumbnailsFolder: URL,
+        onUpdate: @escaping @Sendable (PipelineUpdate) -> Void
+    ) async throws -> PipelineResult {
+        let progress = ProgressBoard(handler: onUpdate)
+        await progress.configure(hasSpeech: false, hasScreen: true, isPictures: true)
+        let warmFormatter = options.smartFormatting ? SmartFormatter.prewarmedSession() : nil
+        try? FileManager.default.createDirectory(at: thumbnailsFolder, withIntermediateDirectories: true)
+
+        var pictures: [NoteComposer.Picture] = []
+        var unreadable: [String] = []
+        for (index, url) in urls.enumerated() {
+            try Task.checkCancellation()
+            await progress.set(.readingScreen, Double(index) / Double(urls.count))
+            guard let image = PictureReader.image(at: url) else {
+                unreadable.append(url.lastPathComponent)
+                continue
+            }
+            let page = try await PictureReader.read(image)
+            let thumbnail = ScreenTextReader.saveThumbnail(image, folder: thumbnailsFolder, name: "picture-\(index + 1).jpg", maxWidth: 1600)
+            pictures.append(.init(name: url.lastPathComponent, thumbnail: thumbnail, page: page))
+        }
+        await progress.set(.readingScreen, 1)
+        guard !pictures.isEmpty else { throw ClipError.notPicture }
+
+        try Task.checkCancellation()
+        await progress.set(.formatting, 0)
+        let board = progress
+        let notice = unreadable.isEmpty ? nil : "Some pictures couldn't be opened: \(unreadable.joined(separator: ", "))."
+        let composed = await NoteComposer.compose(
+            pictures: pictures,
+            useSmartFormatting: options.smartFormatting,
+            notice: notice,
+            progress: { fraction in Task { await board.set(.formatting, fraction) } }
+        )
+        withExtendedLifetime(warmFormatter) {}
+        Self.removeUnusedThumbnails(in: thumbnailsFolder, keeping: Set(composed.content.pictures.compactMap(\.thumbnail)))
+        return PipelineResult(title: composed.title, content: composed.content, duration: 0)
     }
 
     struct Transcript: Sendable {
@@ -114,6 +185,9 @@ actor ClipPipeline {
         var language: String?
         var engine: String?
         var notice: String?
+        var sound: SoundProfile?
+        /// Songs and other music left out of the transcript.
+        var music: [TimeSpan] = []
     }
 
     private func transcribe(asset: AVURLAsset, hasAudio: Bool, duration: TimeInterval, options: PipelineOptions, board: ProgressBoard) async throws -> Transcript {
@@ -124,6 +198,22 @@ actor ClipPipeline {
             Task { await board.set(.extractingAudio, fraction) }
         }
         guard !samples.isEmpty else { return Transcript() }
+
+        // Hear where the music is, so songs aren't transcribed as speech.
+        await board.set(.listening, 0)
+        let sound = try? await SoundClassifier.profile(samples: samples)
+        let music = options.skipsMusic ? sound?.musicSpans() ?? [] : []
+        await board.set(.listening, 1)
+        let speechSamples = SoundProfile.silencing(music, in: samples)
+        let soundFrames = AudioChunker.frameEnergies(speechSamples, frame: AudioLoader.sampleRate / 20).filter { $0 >= 0.004 }
+        if soundFrames.count < 20 {
+            // Under a second of sound outside the music: no need for a speech engine.
+            await board.set(.transcribing, 1)
+            return Transcript(sound: sound, music: music)
+        }
+        func outsideMusic(_ segments: [SpeechSegment]) -> [SpeechSegment] {
+            segments.filter { TimeSpan.share(from: $0.start, to: $0.end, in: music) < 0.5 }
+        }
 
         let order: [EnginePreference] = switch options.engine {
         case .automatic: WhisperEngine.isBundled ? [.whisper, .apple] : [.apple]
@@ -149,21 +239,21 @@ actor ClipPipeline {
                     slowNotice.cancel()
                     await board.set(.loadingModel, 1)
                     if language == nil {
-                        language = try await WhisperService.shared.detectLanguage(samples: samples)
+                        language = try await WhisperService.shared.detectLanguage(samples: speechSamples)
                     }
                     let detected = language ?? "en"
                     await board.set(.transcribing, 0)
-                    let segments = try await WhisperService.shared.transcribe(samples: samples, language: detected) { fraction in
+                    let segments = try await WhisperService.shared.transcribe(samples: speechSamples, language: detected) { fraction in
                         Task { await board.set(.transcribing, fraction) }
                     }
-                    return Transcript(segments: segments, language: detected, engine: WhisperEngine.displayName)
+                    return Transcript(segments: outsideMusic(segments), language: detected, engine: WhisperEngine.displayName, sound: sound, music: music)
                 case .apple, .automatic:
                     await board.set(.transcribing, 0)
                     let segments = try await AppleSpeechEngine.transcribe(asset: asset, language: language, duration: duration) { fraction in
                         Task { await board.set(.transcribing, fraction) }
                     }
                     let code = language ?? Locale.current.language.languageCode?.identifier
-                    return Transcript(segments: segments, language: code, engine: AppleSpeechEngine.displayName)
+                    return Transcript(segments: outsideMusic(segments), language: code, engine: AppleSpeechEngine.displayName, sound: sound, music: music)
                 }
             } catch is CancellationError {
                 throw CancellationError()
@@ -173,27 +263,24 @@ actor ClipPipeline {
             }
         }
         let reason = failures.last ?? "No speech engine was available."
-        return Transcript(language: language, notice: "The speech couldn't be transcribed. \(reason)")
+        return Transcript(language: language, notice: "The speech couldn't be transcribed. \(reason)", sound: sound, music: music)
     }
 
-    private func readScreen(asset: AVURLAsset, enabled: Bool, duration: TimeInterval, interval: TimeInterval, folder: URL, board: ProgressBoard) async throws -> [TrackedMoment] {
-        guard enabled else { return [] }
+    private func readScreen(asset: AVURLAsset, enabled: Bool, duration: TimeInterval, interval: TimeInterval, board: ProgressBoard) async throws -> ScreenReading {
+        guard enabled else { return ScreenReading() }
         do {
-            return try await ScreenTextReader.read(
-                asset: asset, duration: duration, interval: interval, thumbnailsFolder: folder
-            ) { fraction in
+            return try await ScreenTextReader.read(asset: asset, duration: duration, interval: interval) { fraction in
                 Task { await board.set(.readingScreen, fraction) }
             }
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             // On-screen text is a bonus; a failure here shouldn't lose the transcript.
-            return []
+            return ScreenReading()
         }
     }
 
-    private static func removeUnusedThumbnails(in folder: URL, keeping moments: [ScreenMoment]) {
-        let used = Set(moments.compactMap(\.thumbnail))
+    private static func removeUnusedThumbnails(in folder: URL, keeping used: Set<String>) {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         for file in files where !used.contains(file) {
             try? FileManager.default.removeItem(at: folder.appending(path: file))
@@ -204,7 +291,7 @@ actor ClipPipeline {
 /// Combines the progress of steps that run side by side into one bar.
 actor ProgressBoard {
     enum Step: Hashable {
-        case preparing, extractingAudio, loadingModel, transcribing, readingScreen, formatting
+        case preparing, extractingAudio, listening, loadingModel, transcribing, readingScreen, formatting
     }
 
     private let handler: @Sendable (PipelineUpdate) -> Void
@@ -212,6 +299,7 @@ actor ProgressBoard {
     private var active: [Step] = []
     private var hasSpeech = true
     private var hasScreen = true
+    private var isPictures = false
     private var lastSent = -1.0
     private var isSlowModelLoad = false
 
@@ -224,9 +312,10 @@ actor ProgressBoard {
         handler(PipelineUpdate(stage: stageText(), fraction: overallFraction()))
     }
 
-    func configure(hasSpeech: Bool, hasScreen: Bool) {
+    func configure(hasSpeech: Bool, hasScreen: Bool, isPictures: Bool = false) {
         self.hasSpeech = hasSpeech
         self.hasScreen = hasScreen
+        self.isPictures = isPictures
     }
 
     func set(_ step: Step, _ fraction: Double) {
@@ -245,7 +334,7 @@ actor ProgressBoard {
     private func overallFraction() -> Double {
         // Weights reflect typical time spent in each step.
         var weights: [(Step, Double)] = []
-        if hasSpeech { weights += [(.extractingAudio, 0.06), (.transcribing, 0.54)] }
+        if hasSpeech { weights += [(.extractingAudio, 0.05), (.listening, 0.03), (.transcribing, 0.52)] }
         if hasScreen { weights.append((.readingScreen, hasSpeech ? 0.25 : 0.7)) }
         weights.append((.formatting, 0.15))
         let total = weights.reduce(0) { $0 + $1.1 }
@@ -257,11 +346,12 @@ actor ProgressBoard {
         let labels: [Step: String] = [
             .preparing: "Opening video",
             .extractingAudio: "Reading audio",
+            .listening: "Listening for music",
             .loadingModel: isSlowModelLoad
                 ? "Getting the speech model ready (first time only, about a minute)"
                 : "Loading the speech model",
             .transcribing: "Transcribing speech",
-            .readingScreen: "Reading on-screen text",
+            .readingScreen: isPictures ? "Reading the pictures" : "Reading on-screen text",
             .formatting: "Writing the note",
         ]
         let current = active.compactMap { labels[$0] }
