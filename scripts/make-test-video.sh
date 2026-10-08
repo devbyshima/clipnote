@@ -1,14 +1,14 @@
 #!/bin/bash
-# Builds ClipnoteTests/Fixtures/sample.mp4: three slides with on-screen text,
+# Builds OvylTests/Fixtures/sample.mp4: three slides with on-screen text,
 # narrated by the system voice, plus burned-in captions on the last slide.
-# The integration test checks the note Clipnote makes from it.
+# The integration test checks the note Ovyl makes from it.
 #
 #   ./scripts/make-test-video.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${TMPDIR:-/tmp}/clipnote-sample"
-OUT="$ROOT/ClipnoteTests/Fixtures/sample.mp4"
+WORK="${TMPDIR:-/tmp}/ovyl-sample"
+OUT="$ROOT/OvylTests/Fixtures/sample.mp4"
 rm -rf "$WORK" && mkdir -p "$WORK"
 
 slide() { # name, title, line1, line2, caption

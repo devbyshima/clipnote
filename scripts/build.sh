@@ -3,7 +3,7 @@
 # warnings from our own sources, and the result.
 #
 #   ./scripts/build.sh                 # Debug build in .build/main
-#   ./scripts/build.sh release         # Release build, copied to build/Clipnote.app
+#   ./scripts/build.sh release         # Release build, copied to build/Ovyl.app
 #   ./scripts/build.sh test            # anything else goes to xcodebuild (default: build)
 #   ./scripts/build.sh bench [test]    # Whisper load and speed benchmarks (ModelLoadBenchmark)
 set -uo pipefail
@@ -22,8 +22,8 @@ RELEASE=0
 if [ "${1:-}" = "bench" ]; then
   # ./scripts/build.sh bench [testName]
   shift
-  export TEST_RUNNER_CLIPNOTE_BENCH=1
-  TARGET="ClipnoteTests/ModelLoadBenchmark"
+  export TEST_RUNNER_OVYL_BENCH=1
+  TARGET="OvylTests/ModelLoadBenchmark"
   if [ -n "${1:-}" ]; then TARGET="$TARGET/$1()"; shift; fi
   set -- test "-only-testing:$TARGET" "$@"
 fi
@@ -40,19 +40,19 @@ ACTION=("$@")
 
 xcodegen generate --quiet || exit 1
 
-xcodebuild -project Clipnote.xcodeproj -scheme Clipnote -configuration "$CONFIG" \
+xcodebuild -project Ovyl.xcodeproj -scheme Ovyl -configuration "$CONFIG" \
   -destination "platform=macOS,arch=arm64" -derivedDataPath "$DERIVED" \
   -skipPackagePluginValidation -skipMacroValidation \
   "${ACTION[@]}" >"$LOG" 2>&1
 STATUS=$?
 
-grep -E "^$ROOT/(Clipnote|ClipnoteTests)/.*(error|warning):" "$LOG" | sort -u
+grep -E "^$ROOT/(Ovyl|OvylTests)/.*(error|warning):" "$LOG" | sort -u
 grep -E "^(error|fatal error):|Test .*(passed|failed)|recorded an issue|✘|✔ Test run|^BENCH " "$LOG" | sort -u | head -80
 if [ $STATUS -eq 0 ] && [ $RELEASE -eq 1 ]; then
   mkdir -p build
-  rm -rf build/Clipnote.app
-  cp -R "$DERIVED/Build/Products/Release/Clipnote.app" build/
-  echo "App: $ROOT/build/Clipnote.app"
+  rm -rf build/Ovyl.app
+  cp -R "$DERIVED/Build/Products/Release/Ovyl.app" build/
+  echo "App: $ROOT/build/Ovyl.app"
 fi
 if [ $STATUS -eq 0 ]; then echo "SUCCEEDED (${ACTION[*]})"; else echo "FAILED (full log: $LOG)"; fi
 exit $STATUS

@@ -77,9 +77,9 @@ struct SettingsView: View {
     private var engineFootnote: String {
         switch EnginePreference(rawValue: engine) ?? .automatic {
         case .automatic:
-            "Whisper large-v3 turbo, built into Clipnote, transcribes first for the best accuracy in any language. If it can't, Apple's on-device speech model takes over."
+            "Whisper large-v3 turbo, built into Ovyl, transcribes first for the best accuracy in any language. If it can't, Apple's on-device speech model takes over."
         case .whisper:
-            "Only Whisper large-v3 turbo is used. It's built into Clipnote and works in about 100 languages."
+            "Only Whisper large-v3 turbo is used. It's built into Ovyl and works in about 100 languages."
         case .apple:
             "Apple's on-device speech model goes first; it's the fastest. macOS downloads its language files once. Whisper takes over if it can't."
         }

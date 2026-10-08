@@ -3,12 +3,12 @@ import SwiftData
 import SwiftUI
 
 @main
-struct ClipnoteApp: App {
+struct OvylApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var center = ProcessingCenter.shared
 
     var body: some Scene {
-        Window("Clipnote", id: "main") {
+        Window("Ovyl", id: "main") {
             ContentView()
                 .environment(center)
                 .frame(minWidth: 860, minHeight: 540)

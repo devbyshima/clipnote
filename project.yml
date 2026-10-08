@@ -1,4 +1,4 @@
-name: Clipnote
+name: Ovyl
 options:
   bundleIdPrefix: com.fulltimestudio
   deploymentTarget:
@@ -23,28 +23,28 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 schemes:
-  Clipnote:
+  Ovyl:
     build:
       targets:
-        Clipnote: all
-        ClipnoteTests: [test]
+        Ovyl: all
+        OvylTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - ClipnoteTests
+        - OvylTests
     profile:
       config: Release
     archive:
       config: Release
 
 targets:
-  Clipnote:
+  Ovyl:
     type: application
     platform: macOS
     sources:
-      - path: Clipnote
+      - path: Ovyl
       # The Whisper model and tokenizer ship inside the app, so transcription
       # never needs a download. Fetched by scripts/fetch-models.sh.
       - path: Models/Whisper
@@ -54,50 +54,50 @@ targets:
       - package: ArgmaxOSS
         product: WhisperKit
     entitlements:
-      path: Clipnote/App/Clipnote.entitlements
+      path: Ovyl/App/Ovyl.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fulltimestudio.clipnote
-        PRODUCT_NAME: Clipnote
+        PRODUCT_BUNDLE_IDENTIFIER: com.fulltimestudio.ovyl
+        PRODUCT_NAME: Ovyl
         ENABLE_PREVIEWS: YES
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         COMBINE_HIDPI_IMAGES: YES
     info:
-      path: Clipnote/App/Info.plist
+      path: Ovyl/App/Info.plist
       properties:
-        CFBundleDisplayName: Clipnote
+        CFBundleDisplayName: Ovyl
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHumanReadableCopyright: Everything stays on this Mac.
-        NSSpeechRecognitionUsageDescription: Clipnote transcribes the speech in your videos on this Mac. Nothing leaves your computer.
+        NSSpeechRecognitionUsageDescription: Ovyl transcribes the speech in your videos on this Mac. Nothing leaves your computer.
         CFBundleDocumentTypes:
           - CFBundleTypeName: Video
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.movie, public.audiovisual-content]
 
-  ClipnoteTests:
+  OvylTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: ClipnoteTests
+      - path: OvylTests
         excludes: [Fixtures]
-      - path: ClipnoteTests/Fixtures
+      - path: OvylTests/Fixtures
         type: folder
         buildPhase: resources
     dependencies:
-      - target: Clipnote
+      - target: Ovyl
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fulltimestudio.clipnote.tests
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Clipnote.app/Contents/MacOS/Clipnote
+        PRODUCT_BUNDLE_IDENTIFIER: com.fulltimestudio.ovyl.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Ovyl.app/Contents/MacOS/Ovyl
         BUNDLE_LOADER: $(TEST_HOST)
         GENERATE_INFOPLIST_FILE: YES

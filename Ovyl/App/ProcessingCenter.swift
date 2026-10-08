@@ -73,7 +73,7 @@ final class ProcessingCenter {
         }
         save()
         if !skipped.isEmpty {
-            importError = "Clipnote makes notes from video and audio files. Skipped: \(skipped.joined(separator: ", "))."
+            importError = "Ovyl makes notes from video and audio files. Skipped: \(skipped.joined(separator: ", "))."
         }
         for note in created { enqueue(note) }
         if let last = created.last { lastImportedID = last.id }
@@ -206,13 +206,13 @@ final class ProcessingCenter {
     private static func makeContainer() -> ModelContainer {
         let folder = URL.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appending(path: "Clipnote.store")
+        let url = folder.appending(path: "Ovyl.store")
         let schema = Schema([Note.self])
         if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
             return container
         }
         // An unreadable store is set aside rather than crashing the app.
-        let aside = folder.appending(path: "Clipnote-unreadable-\(Int(Date.now.timeIntervalSince1970)).store")
+        let aside = folder.appending(path: "Ovyl-unreadable-\(Int(Date.now.timeIntervalSince1970)).store")
         try? FileManager.default.moveItem(at: url, to: aside)
         if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
             return container
@@ -220,7 +220,7 @@ final class ProcessingCenter {
         do {
             return try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
         } catch {
-            fatalError("Clipnote couldn't create its notes store: \(error)")
+            fatalError("Ovyl couldn't create its notes store: \(error)")
         }
     }
 }

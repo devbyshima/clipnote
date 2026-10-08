@@ -1,14 +1,14 @@
 import AVFoundation
 import Foundation
 import Testing
-@testable import Clipnote
+@testable import Ovyl
 
 /// Measures Whisper's first (cold) load, a later (warm) load, and transcription
 /// speed for each place the model can run. Each run copies the model to a new
 /// folder, so Core ML has no compiled cache for it, like a first launch.
 ///
 ///   ./scripts/build.sh bench
-@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["CLIPNOTE_BENCH"] == "1"), .timeLimit(.minutes(40)))
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["OVYL_BENCH"] == "1"), .timeLimit(.minutes(40)))
 struct ModelLoadBenchmark {
     private final class Token {}
 

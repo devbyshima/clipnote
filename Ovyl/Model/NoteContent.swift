@@ -1,6 +1,6 @@
 import Foundation
 
-/// The body of a note: everything Clipnote found in a video, organized for
+/// The body of a note: everything Ovyl found in a video, organized for
 /// reading. Stored as JSON on `Note`, so it can grow without migrations.
 nonisolated struct NoteContent: Codable, Sendable, Equatable {
     var summary: String?

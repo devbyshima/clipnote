@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Clipnote
+@testable import Ovyl
 
 struct ParagraphBuilderTests {
     @Test func splitsOnLongPauses() {

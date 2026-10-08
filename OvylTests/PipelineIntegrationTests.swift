@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
-@testable import Clipnote
+@testable import Ovyl
 
 /// Runs the real pipeline on Fixtures/sample.mp4 (made by
 /// scripts/make-test-video.sh): three narrated slides, with a burned-in
@@ -20,7 +20,7 @@ struct PipelineIntegrationTests {
     }
 
     private func run(_ options: PipelineOptions) async throws -> PipelineResult {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "clipnote-tests-\(UUID().uuidString)")
+        let folder = FileManager.default.temporaryDirectory.appending(path: "ovyl-tests-\(UUID().uuidString)")
         let result = try await ClipPipeline().run(url: try sampleURL, options: options, thumbnailsFolder: folder) { _ in }
         print("──── \(options.engine.rawValue) ────")
         print(NoteExporter.markdown(.init(title: result.title, date: .now, duration: result.duration, content: result.content)))

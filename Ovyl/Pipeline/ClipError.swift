@@ -13,7 +13,7 @@ nonisolated enum ClipError: LocalizedError, Equatable {
         case .fileMissing:
             "The video file can't be found. It may have been moved, renamed, or deleted."
         case .notMedia:
-            "This file has no audio or video Clipnote can read."
+            "This file has no audio or video Ovyl can read."
         case .unreadableAudio:
             "The video's audio couldn't be decoded."
         case .whisperModelMissing:

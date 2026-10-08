@@ -2,7 +2,7 @@ import AppKit
 import SwiftData
 import SwiftUI
 import Testing
-@testable import Clipnote
+@testable import Ovyl
 
 /// Renders the real window offscreen to PNGs, for checking the layout by eye.
 /// Files land in the test host's temporary folder; the path is printed.
@@ -11,7 +11,7 @@ import Testing
 struct SnapshotTests {
     private final class Token {}
 
-    static let folder = FileManager.default.temporaryDirectory.appending(path: "clipnote-snapshots")
+    static let folder = FileManager.default.temporaryDirectory.appending(path: "ovyl-snapshots")
 
     @Test func renderWindows() async throws {
         try? FileManager.default.removeItem(at: Self.folder)

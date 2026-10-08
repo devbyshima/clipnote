@@ -1,6 +1,6 @@
 #!/bin/bash
 # Downloads the Whisper model and tokenizer that get bundled inside the app.
-# Run once after cloning; the build copies Models/Whisper into Clipnote.app.
+# Run once after cloning; the build copies Models/Whisper into Ovyl.app.
 #
 #   ./scripts/fetch-models.sh
 set -euo pipefail

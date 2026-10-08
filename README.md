@@ -1,6 +1,6 @@
-# Clipnote
+# Ovyl
 
-A Mac app that turns videos into formatted notes. Drop in a video and Clipnote:
+A Mac app that turns videos into formatted notes. Drop in a video and Ovyl:
 
 - transcribes the speech,
 - reads text that appears on screen (slides, titles, code, signs),
@@ -50,20 +50,20 @@ Requires macOS 27 and Xcode 27, plus `xcodegen` (Homebrew).
 ./scripts/make-test-video.sh  # once: makes the test video (needs ffmpeg and rsvg-convert)
 ./scripts/build.sh            # Debug build in .build/main
 ./scripts/build.sh test       # unit tests and an end-to-end run on the test video
-./scripts/build.sh release    # Release build, copied to build/Clipnote.app
+./scripts/build.sh release    # Release build, copied to build/Ovyl.app
 ./scripts/build.sh bench      # Whisper load and speed benchmarks
 ```
 
 Signing uses `DEVELOPMENT_TEAM` in `project.yml`; set it to your own team ID.
 
-The test video is three narrated slides with a burned-in caption. It isn't in the repository because it's narrated with a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes it on your Mac. `./scripts/build.sh test -only-testing:ClipnoteTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
+The test video is three narrated slides with a burned-in caption. It isn't in the repository because it's narrated with a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes it on your Mac. `./scripts/build.sh test -only-testing:OvylTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
 
 ## Layout
 
-- `Clipnote/Pipeline`: audio decoding, Whisper and Apple Speech engines, on-screen text reader, note composer, smart formatter.
-- `Clipnote/Model`: the SwiftData `Note`, its JSON content, Markdown export.
-- `Clipnote/UI`: SwiftUI views.
-- `ClipnoteTests`: Swift Testing unit tests and `PipelineIntegrationTests`.
+- `Ovyl/Pipeline`: audio decoding, Whisper and Apple Speech engines, on-screen text reader, note composer, smart formatter.
+- `Ovyl/Model`: the SwiftData `Note`, its JSON content, Markdown export.
+- `Ovyl/UI`: SwiftUI views.
+- `OvylTests`: Swift Testing unit tests and `PipelineIntegrationTests`.
 
 ## Credits
 
@@ -72,9 +72,9 @@ The test video is three narrated slides with a burned-in caption. It isn't in th
 
 ## License
 
-Clipnote is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Ovyl is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 You may use, study and change it for any non-commercial purpose. Selling it, or using it in
 anything that earns money, is not allowed. The first published version, released under MIT, remains under MIT.
 
-The Clipnote name and icon are not covered by the license: a modified version must use its own
+The Ovyl name and icon are not covered by the license: a modified version must use its own
 name and icon.

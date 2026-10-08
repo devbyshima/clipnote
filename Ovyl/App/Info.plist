@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Clipnote</string>
+	<string>Ovyl</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -43,6 +43,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Everything stays on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Clipnote transcribes the speech in your videos on this Mac. Nothing leaves your computer.</string>
+	<string>Ovyl transcribes the speech in your videos on this Mac. Nothing leaves your computer.</string>
 </dict>
 </plist>

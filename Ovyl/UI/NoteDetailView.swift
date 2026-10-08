@@ -106,7 +106,7 @@ struct WelcomeView: View {
                 Text(hasNotes ? "Select a note, or drop a new video" : "Drop a video to make a note")
                     .font(.largeTitle.weight(.bold))
                     .multilineTextAlignment(.center)
-                Text("Clipnote transcribes what's said, reads any text that appears on screen, and writes it up as a clean, organized note.")
+                Text("Ovyl transcribes what's said, reads any text that appears on screen, and writes it up as a clean, organized note.")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
