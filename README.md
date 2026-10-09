@@ -1,6 +1,6 @@
 # Ovyl
 
-A Mac app that turns videos and pictures into formatted notes. Drop in a video and Ovyl:
+A Mac app that turns videos, audio recordings and pictures into formatted notes. Drop in a video or a recording and Ovyl:
 
 - transcribes the speech, and recognizes songs and other music instead of transcribing the lyrics,
 - reads text that appears on screen and tells apart subtitles, titles that stay on screen, slides, and remarks (commentary),
@@ -10,15 +10,40 @@ A Mac app that turns videos and pictures into formatted notes. Drop in a video a
 
 Drop in pictures (screenshots, photos of pages or whiteboards) and Ovyl reads their text into one note, a section per picture, in file name order.
 
-Everything runs on the Mac. The app has no network entitlement.
+Notes are made on the Mac. The only network use is the assistant, when it's set to Claude (with your own API key) or Apple's Private Cloud Compute; by default it runs on the Mac too.
 
 ## The window
 
-- **Left:** Home (every note), New (make a note from a video or pictures), and folders, each with its count. Drag notes onto a folder to file them.
+- **Left:** Home (every note), New (make a note from a video, audio or pictures), and folders, each with its count. Drag notes onto a folder to file them.
 - **Middle:** the notes, grouped by day, or the open note. A note opens in reader mode with just its title and text, with a Sans or Serif choice and a text size at the bottom. Edit (⌘E) edits its Markdown, showing the syntax only on the line being edited; selecting text brings up a formatting bar, and ⌘B, ⌘I and ⌘K work. Copy copies the note as Markdown. Timestamps in the note are links that play the video from that moment.
 - **Right:** the note's video on a dotted canvas, with Frames (F), Info (I) and Delete (D) under it. Frames moves the frames grabbed from on-screen text into the middle as a grid; Info moves the video into the middle and shows its details on the right. Back and forward (⌘[ and ⌘]) return to the note. The note's Info button shows its details and summary on the right instead.
 
 Both side panes slide away (⌘. for the left, ⌘P for the right), and the right one resizes by dragging its edge. New notes go into the folder you're looking at. ⌘N or ⌘O makes a note, ⇧⌘N makes a folder.
+
+Search (⌘F) goes through everything in the notes, not only titles: what was said, text on screen, text in pictures, and edited text. Results are ranked, and each shows where it matched (a time, a frame, a picture) with the words marked.
+
+## Assistant
+
+The sparkles button (⌘J) opens the assistant on the right. Chat with it like any language model, about what's in Ovyl: it finds and reads notes, transcripts by time, and text from frames and pictures, and it can make, rewrite, add to, rename, move and open notes. Ask it to combine two notes into one, restructure a note so it reads well, or help you write. Its changes happen right away and each has Undo. The open note is attached to what you ask; earlier chats are under the clock button.
+
+| Model | Where it runs |
+|-------|---------------|
+| On this Mac (default) | Apple Foundation Models, on the Mac |
+| Apple Private Cloud | Apple's Private Cloud Compute |
+| Claude (Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5) | Anthropic, with your API key from Settings › Assistant, kept in the keychain |
+
+The on-device model holds a few pages at a time, so it reads long notes in parts; the others read far more at once.
+
+## Storage
+
+Ovyl keeps your data apart from what it can make again, so it doesn't clutter the Mac:
+
+- **Kept (Application Support):** the notes, the frames and pictures they show, and assistant chats. Removed with the note or chat.
+- **Made again when needed (Caches, temporary folder):** the search index, the speech model compiled for this Mac, and working files. macOS may clear these when space runs low.
+- **Cleaned up on its own:** frames of deleted notes, temporary files older than a day, unreadable stores set aside more than 30 days ago, and speech model builds left behind by OS updates.
+- **Never copied:** your videos, audio and pictures stay where they are; notes point to them.
+
+Settings › Storage shows what each part takes, and clears the caches or the speech model build.
 
 ## How it works
 
@@ -30,6 +55,7 @@ Both side panes slide away (⌘. for the left, ⌘P for the right), and the righ
 | On-screen text | Apple Vision text recognition | Built into macOS |
 | Text in pictures | Apple Vision document recognition | Built into macOS |
 | Title, summary, headings | Apple Foundation Models | Built into macOS (Apple Intelligence) |
+| Search | SQLite FTS5 full-text index, NaturalLanguage sentence embeddings | Built into macOS |
 
 - **Speech:** Automatic mode uses Whisper first (most accurate, about 100 languages, detects the language), then Apple Speech if Whisper can't run. Settings can put Apple Speech first.
 - **Music:** the soundtrack is classified in 3-second windows. Singing, or music with little talking, is silenced before Whisper runs and left out of the transcript; the note marks where it played. Talking over background music is still transcribed. Settings can turn this off.
@@ -77,18 +103,21 @@ Requires macOS 27 and Xcode 27, plus `xcodegen` (Homebrew).
 
 Signing uses `DEVELOPMENT_TEAM` in `project.yml`; set it to your own team ID.
 
-The test fixtures are three narrated slides with a burned-in caption, narration with matching subtitles over quiet music, a sung song with captions, captions with no sound, and two pictures. They aren't in the repository because most use a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes them on your Mac. `./scripts/build.sh test -only-testing:OvylTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
+The test fixtures are three narrated slides with a burned-in caption (and the same narration as audio only), narration with matching subtitles over quiet music, a sung song with captions, captions with no sound, and two pictures. They aren't in the repository because most use a macOS system voice, which Apple's license doesn't allow sharing publicly, so the script makes them on your Mac. `./scripts/build.sh test -only-testing:OvylTests/SnapshotTests` renders the main screens offscreen; the PNGs are printed into `.build/main/build.log` as `SNAPSHOT <name> <base64>` lines, since the app container is private.
 
 ## Layout
 
 - `Ovyl/Pipeline`: audio decoding, music detection, Whisper and Apple Speech engines, on-screen text reader and sorter, picture reader, note composer, smart formatter.
+- `Ovyl/Index`: the search index (passages by words and by meaning) and the indexer that keeps it in step with the notes.
+- `Ovyl/Assistant`: chats, the library tools the assistant works through, and the Claude client.
 - `Ovyl/Model`: the SwiftData `Note` and `Folder`, the note's JSON content, and its Markdown: written, parsed and exported.
 - `Ovyl/UI`: SwiftUI views: the sidebar, notes list, note page, media pane, frames grid, media viewer and info panes, and the Markdown reader and editor in `Ovyl/UI/Markdown`.
-- `OvylTests`: Swift Testing unit tests and `PipelineIntegrationTests`.
+- `OvylTests`: Swift Testing unit tests, `PipelineIntegrationTests`, the index and tools in `LibraryTests`, and the assistant with the on-device model in `AssistantTests`.
 
 ## Credits
 
 - [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) by Argmax (MIT) runs Whisper with Core ML.
+- [Caveat](https://github.com/googlefonts/caveat) by Impallari Type (SIL Open Font License 1.1) is the handwriting in the empty states; its license is in `Ovyl/Resources/Fonts`.
 - [Whisper](https://github.com/openai/whisper) by OpenAI; the Core ML conversion is [argmaxinc/whisperkit-coreml](https://huggingface.co/argmaxinc/whisperkit-coreml) (MIT) and the tokenizer comes from [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3) (Apache 2.0). Both are downloaded by `scripts/fetch-models.sh`, not stored here.
 
 ## License

@@ -194,6 +194,15 @@ struct NoteInfoView: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
     }
 
+    private var madeFrom: String {
+        switch note.mediaKind {
+        case .pictures: note.pictureBookmarks.count == 1 ? "1 picture" : "\(note.pictureBookmarks.count) pictures"
+        case .text: "Written in Ovyl"
+        case .audio: note.duration > 0 ? "\(TimeFormat.clock(note.duration)) audio" : "Audio"
+        case .video: note.duration > 0 ? "\(TimeFormat.clock(note.duration)) video" : "Video"
+        }
+    }
+
     @ViewBuilder
     private var rows: some View {
         let content = note.content
@@ -201,9 +210,7 @@ struct NoteInfoView: View {
         VStack(alignment: .leading, spacing: 11) {
             InspectorRow("Type") { TypePill(label: "Note") }
             InspectorRow("Made from") {
-                Text(note.kind == .pictures
-                     ? (note.pictureBookmarks.count == 1 ? "1 picture" : "\(note.pictureBookmarks.count) pictures")
-                     : (note.duration > 0 ? "\(TimeFormat.clock(note.duration)) video" : "Video"))
+                Text(madeFrom)
             }
             InspectorRow("Created") { Text(note.createdAt.formatted(date: .abbreviated, time: .shortened)) }
             InspectorRow("Updated") {

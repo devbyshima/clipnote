@@ -124,12 +124,16 @@ struct MediaPane: View {
         } trailing: {
             PillGroup {
                 PillMenu(help: "More") {
-                    Button("Show in Finder", systemImage: "folder") { note.revealSource() }
-                    if note.kind == .video {
-                        Button("Locate Video…", systemImage: "magnifyingglass") { isLocating = true }
+                    if note.kind != .text {
+                        Button("Show in Finder", systemImage: "folder") { note.revealSource() }
                     }
-                    Divider()
-                    Button("Process Again", systemImage: "arrow.clockwise") { center.enqueue(note) }
+                    if note.kind == .video {
+                        Button(note.mediaKind == .audio ? "Locate Recording…" : "Locate Video…", systemImage: "magnifyingglass") { isLocating = true }
+                    }
+                    if note.kind != .text {
+                        Divider()
+                        Button("Process Again", systemImage: "arrow.clockwise") { center.enqueue(note) }
+                    }
                 }
             }
         }
@@ -140,7 +144,9 @@ struct MediaPane: View {
 
     @ViewBuilder
     private var hero: some View {
-        if note.kind == .pictures {
+        if note.kind == .text {
+            EmptyState(symbol: "doc.text", title: "Written in Ovyl", message: "This note has no video, audio or pictures.")
+        } else if note.kind == .pictures {
             if let first = items.first {
                 Thumbnail(url: first.imageURL)
                     .aspectRatio(contentMode: .fit)
@@ -166,10 +172,10 @@ struct VideoHero: View {
         Group {
             if player.isUnavailable {
                 VStack(spacing: 10) {
-                    Image(systemName: "video.slash")
+                    Image(systemName: note.mediaKind == .audio ? "waveform.slash" : "video.slash")
                         .font(.system(size: 24))
                         .foregroundStyle(Color.ovylSecondary)
-                    Text("Video not found")
+                    Text(note.mediaKind == .audio ? "Recording not found" : "Video not found")
                         .font(.system(size: 15, weight: .semibold))
                     Text("\(note.sourceName) was moved or deleted. The note is safe.")
                         .font(.system(size: 12.5))

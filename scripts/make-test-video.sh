@@ -187,3 +187,7 @@ SVG
 rsvg-convert "$WORK/picture-1.svg" -o "$FIXTURES/picture-1.png"
 rsvg-convert "$WORK/picture-2.svg" -o "$FIXTURES/picture-2.png"
 echo "$FIXTURES/picture-1.png, picture-2.png"
+
+# The same narration with no picture, as an audio-only recording.
+ffmpeg -loglevel error -y -i "$FIXTURES/sample.mp4" -vn -c:a aac -b:a 48k "$FIXTURES/sample-audio.m4a"
+echo "$FIXTURES/sample-audio.m4a"

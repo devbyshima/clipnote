@@ -23,6 +23,18 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Picture</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -55,7 +67,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Everything stays on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ovyl transcribes the speech in your videos on this Mac. Nothing leaves your computer.</string>
+	<string>Ovyl transcribes the speech in your videos and recordings on this Mac. Nothing leaves your computer.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

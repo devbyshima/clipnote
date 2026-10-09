@@ -57,14 +57,37 @@ struct NoteTitle: View {
     }
 }
 
-/// Shows or hides the right pane (⌘P).
+/// The assistant (⌘J) and the right pane (⌘P). The assistant takes the
+/// right pane while it's open; the pane button brings the media back.
 struct RightPaneToggle: View {
     @AppStorage("showMedia") private var showRightPane = true
+    @AppStorage("showAssistant") private var showAssistant = false
 
     var body: some View {
         PillGroup {
-            PillButton(symbol: "sidebar.right", help: showRightPane ? "Hide the right pane (⌘P)" : "Show the right pane (⌘P)") {
-                showRightPane.toggle()
+            PillButton(symbol: "sparkles", help: showAssistant ? "Close the assistant (⌘J)" : "Ask the assistant (⌘J)", isActive: showAssistant) {
+                showAssistant.toggle()
+            }
+            PillButton(symbol: "sidebar.right", help: showRightPane && !showAssistant ? "Hide the right pane (⌘P)" : "Show the right pane (⌘P)") {
+                if showAssistant {
+                    showAssistant = false
+                    showRightPane = true
+                } else {
+                    showRightPane.toggle()
+                }
+            }
+        }
+    }
+}
+
+/// The assistant button on pages without a note's media.
+struct AssistantToggle: View {
+    @AppStorage("showAssistant") private var showAssistant = false
+
+    var body: some View {
+        PillGroup {
+            PillButton(symbol: "sparkles", help: showAssistant ? "Close the assistant (⌘J)" : "Ask the assistant (⌘J)", isActive: showAssistant) {
+                showAssistant.toggle()
             }
         }
     }
@@ -128,7 +151,7 @@ struct FailedView: View {
             HStack(spacing: 10) {
                 FilledButton(title: "Try Again", symbol: "arrow.clockwise") { center.enqueue(note) }
                 if note.kind == .video {
-                    PlainCapsuleButton(title: "Locate Video…") { isLocating = true }
+                    PlainCapsuleButton(title: note.mediaKind == .audio ? "Locate Recording…" : "Locate Video…") { isLocating = true }
                 }
             }
         }

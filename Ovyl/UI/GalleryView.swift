@@ -27,13 +27,7 @@ struct GalleryView: View {
             }
 
             if items.isEmpty {
-                EmptyState(
-                    symbol: isPictures ? "photo" : "film",
-                    title: isPictures ? "No pictures" : "No frames",
-                    message: isPictures
-                        ? "The pictures couldn't be read."
-                        : "Ovyl grabs a frame whenever text shows on screen, such as a slide. This video had none."
-                )
+                FramesEmptyState(isPictures: isPictures)
             } else {
                 ScrollView {
                     JustifiedLayout(rowHeight: large ? 240 : 150, spacing: 10) {

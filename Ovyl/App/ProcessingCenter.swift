@@ -30,6 +30,11 @@ final class ProcessingCenter {
         container = Self.makeContainer()
     }
 
+    /// A center over another store, for tests.
+    init(container: ModelContainer) {
+        self.container = container
+    }
+
     var context: ModelContext { container.mainContext }
 
     static var isRunningTests: Bool {
@@ -42,6 +47,8 @@ final class ProcessingCenter {
         guard !started, !Self.isRunningTests else { return }
         started = true
         observeSpeechModel()
+        LibraryIndexer.shared.start(self)
+        StorageManager.shared.sweepSoon(self)
         let unfinished = FetchDescriptor<Note>(sortBy: [SortDescriptor(\.createdAt)])
         for note in (try? context.fetch(unfinished)) ?? [] where note.status == .queued || note.status == .processing {
             enqueue(note)
@@ -84,7 +91,7 @@ final class ProcessingCenter {
                 created.append(note)
             case .pictures:
                 pictures.append((url.lastPathComponent, try? Note.bookmark(for: url)))
-            case nil:
+            case .text, nil:
                 skipped.append(url.lastPathComponent)
             }
         }
@@ -120,6 +127,7 @@ final class ProcessingCenter {
     // MARK: Queue
 
     func enqueue(_ note: Note) {
+        guard note.kind != .text else { return }
         // A video will need the speech model unless Apple Speech goes first.
         if note.kind == .video, PipelineOptions.fromDefaults().engine != .apple {
             prepareSpeechModel()
@@ -192,6 +200,16 @@ final class ProcessingCenter {
         save()
     }
 
+    /// Makes a note of text, as the assistant does when it combines notes.
+    @discardableResult
+    func createTextNote(title: String, markdown: String, in folderID: UUID? = nil) -> Note {
+        let note = Note(title: title, markdown: markdown)
+        note.folderID = folderID
+        context.insert(note)
+        save()
+        return note
+    }
+
     func move(_ noteIDs: [UUID], to folderID: UUID?) {
         for id in noteIDs { note(with: id)?.folderID = folderID }
         save()
@@ -216,8 +234,14 @@ final class ProcessingCenter {
         processingID = id
         defer { processingID = nil }
 
+        // Text written in Ovyl has nothing to process.
+        guard note.kind != .text else {
+            note.status = .ready
+            save()
+            return
+        }
         note.status = .processing
-        note.stage = note.kind == .pictures ? "Opening pictures" : "Opening video"
+        note.stage = "Opening \(note.mediaKind.noun)"
         note.progress = 0
         save()
 
@@ -244,6 +268,8 @@ final class ProcessingCenter {
                 try await pipeline.run(url: urls[0], options: options, thumbnailsFolder: folder, onUpdate: onUpdate)
             case .pictures:
                 try await pipeline.run(pictures: urls, options: options, thumbnailsFolder: folder, onUpdate: onUpdate)
+            case .text:
+                throw CancellationError()
             }
         }
         currentRun = run

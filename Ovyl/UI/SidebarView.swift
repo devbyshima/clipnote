@@ -52,7 +52,6 @@ struct SidebarView: View {
             HStack(spacing: 0) {
                 Spacer(minLength: MainWindowStyler.trafficLightsWidth)
                 PillGroup {
-                    PillButton(symbol: "plus", help: "New note from a video or pictures (⌘N)", action: onNew)
                     PillButton(symbol: "sidebar.left", help: "Hide the sidebar (⌘.)") { showSidebar = false }
                 }
             }
@@ -66,7 +65,7 @@ struct SidebarView: View {
                         navigator.go(.home)
                     }
                     row("New", symbol: "plus.square", color: nil, count: nil, selected: false, action: onNew)
-                        .help("New note from a video or pictures (⌘N)")
+                        .help("New note from a video, audio or pictures (⌘N)")
 
                     HStack {
                         Text("Folders")
@@ -265,12 +264,13 @@ extension Note {
     }
 }
 
-/// The speech model's state at the foot of the sidebar, beside Settings.
+/// Settings at the foot of the sidebar. While the speech model loads, a pill
+/// beside it says so; it goes away once the model is ready.
 struct ModelStatusRow: View {
     @Environment(ProcessingCenter.self) private var center
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             SettingsLink {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .medium))
@@ -285,39 +285,57 @@ struct ModelStatusRow: View {
             .focusEffectDisabled()
             .help("Settings (⌘,)")
 
-            HStack(spacing: 6) {
-                Text("Speech model")
-                    .font(.system(size: 13))
-                indicator
+            if let status {
+                HStack(spacing: 7) {
+                    if status.isProblem {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.orange)
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(status.label)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.ovylSecondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(Capsule(style: .continuous).fill(Color.ovylSurface))
+                .overlay(Capsule(style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+                .help(status.help)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .help(help)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: status?.label)
     }
 
-    @ViewBuilder
-    private var indicator: some View {
-        switch center.speechPhase {
-        case .loading, .optimizing:
-            ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 10, height: 10)
-        case .failed:
-            Circle().fill(.orange).frame(width: 7, height: 7)
-        case .ready:
-            Circle().fill(Color.ovylAccent).frame(width: 7, height: 7)
-        case .idle:
-            Circle().fill(Color.ovylSecondary.opacity(0.5)).frame(width: 7, height: 7)
-        }
+    private struct Status {
+        let label: String
+        let help: String
+        var isProblem = false
     }
 
-    private var help: String {
+    /// Nothing while the model is idle or ready.
+    private var status: Status? {
         switch center.speechPhase {
-        case .loading(let firstTime): firstTime ? "Getting the speech model ready. The first time takes about a minute." : "Loading the speech model…"
-        case .optimizing: "Videos are transcribed already. When this one-time step finishes, transcription is faster and uses less power."
-        case .ready: "Ready"
-        case .failed(let message): "Using Apple Speech. \(message)"
-        case .idle: WhisperEngine.isBundled ? "Loads when needed" : "Apple Speech"
+        case .loading(let firstTime):
+            Status(
+                label: "Loading speech model",
+                help: firstTime ? "The first time takes about a minute." : "This takes a few seconds."
+            )
+        case .optimizing:
+            Status(
+                label: "Optimizing speech",
+                help: "Videos are transcribed already. When this one-time step finishes, transcription is faster and uses less power."
+            )
+        case .failed(let message):
+            Status(label: "Using Apple Speech", help: message, isProblem: true)
+        case .idle, .ready:
+            nil
         }
     }
 }

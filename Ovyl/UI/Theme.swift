@@ -65,6 +65,14 @@ extension Font {
     }
 }
 
+enum OvylFonts {
+    /// Registers the bundled Caveat, the handwriting in the empty states. Call once at launch.
+    static func register() {
+        guard let url = Bundle.main.url(forResource: "Caveat", withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+}
+
 extension NSFont {
     /// The system font, or New York when `serif`.
     static func ovyl(_ size: CGFloat, weight: NSFont.Weight = .regular, serif: Bool = false) -> NSFont {

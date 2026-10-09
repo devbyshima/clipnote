@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UniformTypeIdentifiers
 
 enum NoteStatus: String, Codable {
     case queued, processing, ready, failed
@@ -11,6 +12,8 @@ enum NoteKind: String, Codable {
     case video
     /// One or more pictures, read in order.
     case pictures
+    /// Text written in Ovyl, such as a note the assistant put together.
+    case text
 }
 
 @Model
@@ -59,6 +62,19 @@ final class Note {
         self.title = Self.title(fromFileName: first)
     }
 
+    /// A note of text written in Ovyl, ready as soon as it's made.
+    init(title: String, markdown: String) {
+        self.title = title
+        self.titleEdited = true
+        self.kindRaw = NoteKind.text.rawValue
+        self.statusRaw = NoteStatus.ready.rawValue
+        self.progress = 1
+        self.contentData = try? JSONEncoder().encode(NoteContent())
+        self.editedMarkdown = markdown
+        self.updatedAt = .now
+        self.searchText = NoteMarkdown.plainText(markdown)
+    }
+
     var kind: NoteKind { NoteKind(rawValue: kindRaw) ?? .video }
 
     var status: NoteStatus {
@@ -83,10 +99,11 @@ final class Note {
         editedMarkdown ?? NoteMarkdown.body(of: content ?? NoteContent())
     }
 
-    /// Keeps edited text, or goes back to Ovyl's text when it matches.
+    /// Keeps edited text, or goes back to Ovyl's text when it matches. A
+    /// note of text always keeps its text.
     func setMarkdown(_ text: String) {
         let generated = NoteMarkdown.body(of: content ?? NoteContent())
-        editedMarkdown = text == generated ? nil : text
+        editedMarkdown = text == generated && kind != .text ? nil : text
         updatedAt = .now
         searchText = editedMarkdown.map(NoteMarkdown.plainText) ?? content?.plainText ?? ""
     }
@@ -112,7 +129,10 @@ final class Note {
                     : first + w.dropFirst()
             }
         let title = words.joined(separator: " ")
-        return title.isEmpty ? "Untitled Video" : title
+        guard title.isEmpty else { return title }
+        let bare = name.hasPrefix(".") && !name.dropFirst().contains(".")
+        let type = UTType(filenameExtension: bare ? String(name.dropFirst()) : (name as NSString).pathExtension)
+        return type?.conforms(to: .audio) == true ? "Untitled Recording" : "Untitled Video"
     }
 }
 

@@ -13,12 +13,24 @@ struct NotesListView: View {
     @State private var query = ""
     @State private var isSearching = false
     @FocusState private var searchFocused: Bool
+    /// What the index found for `searched`, best first.
+    @State private var matches: [NoteMatch] = []
+    @State private var searched = ""
 
+    /// The notes the index found, best first, then any whose title matches
+    /// but that the index hasn't caught up with yet.
     private var results: [Note] {
         guard !query.isEmpty else { return notes }
-        return notes.filter {
-            $0.displayTitle.localizedStandardContains(query) || $0.searchText.localizedStandardContains(query)
-        }
+        var byID: [UUID: Note] = [:]
+        for note in notes { byID[note.id] = note }
+        let found = matches.compactMap { byID[$0.noteID] }
+        let foundIDs = Set(found.map(\.id))
+        let titles = notes.filter { !foundIDs.contains($0.id) && $0.displayTitle.localizedStandardContains(query) }
+        return found + titles
+    }
+
+    private func match(for note: Note) -> NoteMatch? {
+        matches.first { $0.noteID == note.id }
     }
 
     var body: some View {
@@ -45,13 +57,29 @@ struct NotesListView: View {
                         toggleSearch()
                     }
                     .keyboardShortcut("f", modifiers: .command)
-                    PillButton(symbol: "plus", help: "New note from a video or pictures (⌘N)", action: onNew)
+                    PillButton(symbol: "plus", help: "New note from a video, audio or pictures (⌘N)", action: onNew)
                 }
+                AssistantToggle()
             }
             list
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.ovylBG)
+        .task(id: query) {
+            guard !query.isEmpty else {
+                matches = []
+                searched = ""
+                return
+            }
+            // Let typing settle before asking the index.
+            try? await Task.sleep(for: .milliseconds(90))
+            guard !Task.isCancelled else { return }
+            let scope = folder == nil ? nil : Set(notes.map(\.id))
+            let found = await SearchIndex.shared.search(query, in: scope)
+            guard !Task.isCancelled else { return }
+            matches = found
+            searched = query
+        }
     }
 
     private var searchField: some View {
@@ -87,21 +115,32 @@ struct NotesListView: View {
 
     @ViewBuilder
     private var list: some View {
-        if notes.isEmpty {
-            VStack(spacing: 16) {
-                EmptyState(
-                    symbol: folder == nil ? "film.stack" : "folder",
-                    title: folder == nil ? "No notes yet" : "This folder is empty",
-                    message: folder == nil
-                        ? "Drop a video or pictures on the window. Ovyl transcribes what's said, reads the text on screen, and writes it up as a note. Everything stays on this Mac."
-                        : "Drag notes onto the folder in the sidebar, or make a new one here."
-                )
-                .frame(maxHeight: 260)
-                FilledButton(title: "New Note", symbol: "plus", action: onNew)
+        if notes.isEmpty, folder == nil {
+            HomeEmptyState(onNew: onNew)
+        } else if notes.isEmpty {
+            FolderEmptyState(onNew: onNew)
+        } else if !query.isEmpty, results.isEmpty, searched == query {
+            SearchEmptyState(query: query)
+                .id(query)
+        } else if !query.isEmpty {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Text("Best matches")
+                        Text("\(results.count)")
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.ovylSecondary)
+                    .padding(.horizontal, 30)
+                    .padding(.top, 18)
+                    .padding(.bottom, 8)
+                    ForEach(results) { note in
+                        NoteListRow(note: note, folderName: folderName(of: note), folders: folders, match: match(for: note))
+                    }
+                }
+                .padding(.bottom, 24)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if results.isEmpty {
-            EmptyState(symbol: "magnifyingglass", title: "No results", message: "No notes match “\(query)”.")
+            .scrollIndicators(.visible)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
@@ -170,6 +209,8 @@ struct NoteListRow: View {
     let note: Note
     var folderName: String?
     let folders: [Folder]
+    /// Where a search found the note, shown under its title.
+    var match: NoteMatch?
     @State private var isHovered = false
     @State private var thumbnail: URL?
 
@@ -191,7 +232,11 @@ struct NoteListRow: View {
                 Text(note.displayTitle)
                     .font(.system(size: 13.5))
                     .lineLimit(1)
-                subtitle
+                if let match, match.best.kind != .title {
+                    MatchSnippet(hit: match.best, count: match.count)
+                } else {
+                    subtitle
+                }
             }
 
             Spacer(minLength: 8)
@@ -241,7 +286,7 @@ struct NoteListRow: View {
             Rectangle()
                 .fill(Color.ovylFill)
                 .overlay {
-                    Image(systemName: note.kind == .pictures ? "photo" : "play.rectangle")
+                    Image(systemName: note.mediaKind.symbol)
                         .font(.system(size: 16))
                         .foregroundStyle(Color.ovylSecondary)
                 }
@@ -309,5 +354,66 @@ struct NoteListRow: View {
             .filter { ["jpg", "jpeg", "png", "heic"].contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             .first
+    }
+}
+
+/// Where a search matched inside a note: when, and the words around it with
+/// the matched ones marked.
+struct MatchSnippet: View {
+    let hit: SearchHit
+    let count: Int
+
+    var body: some View {
+        Text(line)
+            .font(.system(size: 12))
+            .foregroundStyle(Color.ovylSecondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var line: AttributedString {
+        var placeText = AttributedString(place)
+        placeText.foregroundColor = Color.ovylAccent
+        return placeText + Self.marked(hit.snippet)
+    }
+
+    private var place: String {
+        let more = count > 1 ? " +\(count - 1)" : ""
+        switch hit.kind {
+        case .screen: return "On screen\(hit.start.map { " " + TimeFormat.clock($0) } ?? "")\(more)  "
+        case .picture: return "Picture\(more)  "
+        case .summary: return "Summary\(more)  "
+        default: return hit.start.map { TimeFormat.clock($0) + more + "  " } ?? (count > 1 ? "\(count) matches  " : "")
+        }
+    }
+
+    /// The snippet with the matched words in the primary color.
+    static func marked(_ snippet: String) -> AttributedString {
+        var result = AttributedString()
+        var current = ""
+        var inside = false
+        func flush() {
+            guard !current.isEmpty else { return }
+            var piece = AttributedString(current)
+            if inside {
+                piece.foregroundColor = .primary
+                piece.backgroundColor = Color.ovylHighlight
+            }
+            result += piece
+            current = ""
+        }
+        for character in snippet.replacing("\n", with: " ") {
+            if character == SearchHit.markStart {
+                flush()
+                inside = true
+            } else if character == SearchHit.markEnd {
+                flush()
+                inside = false
+            } else {
+                current.append(character)
+            }
+        }
+        flush()
+        return result
     }
 }

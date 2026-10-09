@@ -8,6 +8,11 @@ struct SettingsView: View {
     @AppStorage(PipelineOptions.frameIntervalKey) private var frameInterval = 1.0
     @AppStorage(PipelineOptions.smartFormattingKey) private var smartFormatting = true
     @AppStorage(PipelineOptions.skipsMusicKey) private var skipsMusic = true
+    @State private var apiKey = AnthropicKey.value ?? ""
+    @State private var keySaved = AnthropicKey.isSet
+    @State private var confirmsSpeechClear = false
+    private var assistant: AssistantSession { .shared }
+    private var storage: StorageManager { .shared }
 
     /// Languages both Whisper and most Macs handle well, by ISO code.
     private static let languages = [
@@ -67,13 +72,70 @@ struct SettingsView: View {
             }
 
             Section {
-                Label("Everything runs on this Mac. Videos, pictures, transcripts, and notes never leave your computer.", systemImage: "lock.fill")
+                Picker("Model", selection: Binding(get: { assistant.model }, set: { assistant.model = $0 })) {
+                    ForEach(AssistantModel.allCases) { Text($0.label).tag($0) }
+                }
+                LabeledContent("Anthropic API key") {
+                    HStack(spacing: 8) {
+                        SecureField("sk-ant-…", text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                            .onSubmit(saveKey)
+                        Button(keySaved && apiKey == (AnthropicKey.value ?? "") ? "Saved" : "Save", action: saveKey)
+                            .disabled(keySaved && apiKey == (AnthropicKey.value ?? ""))
+                    }
+                }
+            } header: {
+                Text("Assistant")
+            } footer: {
+                Text("\(assistant.model.privacy) The key is only needed for Claude and is kept in your keychain.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                StorageRow(title: "Notes", bytes: storage.usage.notes)
+                StorageRow(title: "Frames and pictures", bytes: storage.usage.frames)
+                StorageRow(title: "Assistant chats", bytes: storage.usage.chats)
+                StorageRow(title: "Search index", bytes: storage.usage.index)
+                StorageRow(title: "Speech model, built for this Mac", bytes: storage.usage.speechCache)
+                StorageRow(title: "Temporary files", bytes: storage.usage.temporary)
+                HStack {
+                    Button("Clear Caches") {
+                        Task { await storage.clearCaches(center) }
+                    }
+                    .help("Empties the search index and temporary files. The index is rebuilt right away.")
+                    Button("Clear Speech Model Build…") { confirmsSpeechClear = true }
+                        .disabled(storage.usage.speechCache == 0)
+                    Spacer()
+                    Text("Total \(StorageRow.format(storage.usage.total))")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Ovyl never copies your videos, audio or pictures; notes point to them where they are. Frames of deleted notes and old temporary files are cleaned up on their own.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Label("Videos, audio, pictures, transcripts and notes are made on this Mac. Only when the assistant uses Claude or Apple's Private Cloud is what it reads sent out.", systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 540)
+        .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
+        .task { await storage.measure() }
+        .confirmationDialog("Clear the speech model build?", isPresented: $confirmsSpeechClear) {
+            Button("Clear", role: .destructive) { Task { await storage.clearSpeechCache() } }
+        } message: {
+            Text("The next video takes a few extra minutes while Whisper is prepared for this Mac again.")
+        }
+    }
+
+    private func saveKey() {
+        AnthropicKey.set(apiKey)
+        keySaved = AnthropicKey.isSet
     }
 
     private var sortedLanguages: [(code: String, name: String)] {
@@ -111,5 +173,21 @@ struct SettingsView: View {
         case .unavailable(let reason):
             "\(reason) Until then, notes use slide titles and the file name for headings."
         }
+    }
+}
+
+/// A kind of stored data and the space it takes.
+struct StorageRow: View {
+    let title: String
+    let bytes: Int64
+
+    var body: some View {
+        LabeledContent(title) {
+            Text(Self.format(bytes)).foregroundStyle(.secondary).monospacedDigit()
+        }
+    }
+
+    static func format(_ bytes: Int64) -> String {
+        bytes == 0 ? "None" : ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }

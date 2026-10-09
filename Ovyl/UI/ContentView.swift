@@ -16,8 +16,10 @@ struct ContentView: View {
     @State private var keyMonitor: Any?
     @AppStorage("showSidebar") private var showSidebar = true
     @AppStorage("showMedia") private var showRightPane = true
+    @AppStorage("showAssistant") private var showAssistant = false
     @AppStorage("mediaPaneWidth") private var mediaPaneWidth = 0.0
     @AppStorage("inspectorWidth") private var inspectorWidth = 0.0
+    @AppStorage("assistantWidth") private var assistantWidth = 0.0
 
     // Resizing the right pane: the width when the drag began, the live width
     // while dragging (so settings aren't written every frame), and the cursor.
@@ -54,7 +56,15 @@ struct ContentView: View {
         }
     }
 
-    private var rightVisible: Bool { showRightPane && currentNote != nil }
+    /// The assistant shows on any page; the media and info need a note.
+    private var rightVisible: Bool { showAssistant || (showRightPane && currentNote != nil) }
+
+    private enum PaneKind { case media, inspector, assistant }
+
+    private var paneKind: PaneKind {
+        if showAssistant { return .assistant }
+        return rightPaneIsInspector ? .inspector : .media
+    }
 
     /// Where new notes go: the folder being looked at, if any.
     private var importFolderID: UUID? {
@@ -79,11 +89,11 @@ struct ContentView: View {
                     middle
                         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
 
-                    if rightVisible, let note = currentNote {
+                    if rightVisible {
                         // The handle and pane slide out together.
                         HStack(spacing: 0) {
                             paneResizeHandle(total: geo.size.width)
-                            rightPane(note)
+                            rightPane
                                 .frame(width: paneWidth(total: geo.size.width))
                         }
                         .transition(.move(edge: .trailing))
@@ -94,6 +104,7 @@ struct ContentView: View {
                 .animation(spring, value: showSidebar)
                 .animation(spring, value: rightVisible)
                 .animation(spring, value: rightPaneIsInspector)
+                .animation(spring, value: showAssistant)
             }
             // The panes' headers share the top row with the traffic lights.
             .ignoresSafeArea(.container, edges: .top)
@@ -104,7 +115,7 @@ struct ContentView: View {
         .background { shortcuts }
         .fileImporter(
             isPresented: $center.isImporterPresented,
-            allowedContentTypes: [.audiovisualContent, .image],
+            allowedContentTypes: [.audiovisualContent, .audio, .image],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result { center.importFiles(urls, into: importFolderID) }
@@ -132,7 +143,7 @@ struct ContentView: View {
             Button("Delete", role: .destructive) { deletePending() }
             Button("Cancel", role: .cancel) { navigator.pendingDelete = nil }
         } message: {
-            Text("The note and its frames are removed from Ovyl. The original video or pictures stay where they are.")
+            Text("The note and its frames are removed from Ovyl. The original video, audio or pictures stay where they are.")
         }
         .onChange(of: center.lastImportedID) { _, id in
             if let id { navigator.go(.note(id)) }
@@ -141,11 +152,16 @@ struct ContentView: View {
         .onChange(of: showRightPane) { _, shows in
             if !shows, case .note = route { media.player.pause() }
         }
+        .onChange(of: showAssistant) { _, shows in
+            // The assistant covers the player, so the video stops.
+            if shows, case .note = route { media.player.pause() }
+        }
         .onChange(of: notes.map(\.id)) { prune() }
         .onChange(of: folders.map(\.id)) { prune() }
         .onAppear {
             media.show(currentNote)
             installKeyMonitor()
+            AssistantSession.shared.openNote = { [navigator] id in navigator.go(.note(id)) }
         }
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -194,7 +210,16 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func rightPane(_ note: Note) -> some View {
+    private var rightPane: some View {
+        if showAssistant {
+            AssistantView(currentNote: currentNote, folders: folders) { showAssistant = false }
+        } else if let note = currentNote {
+            notePane(note)
+        }
+    }
+
+    @ViewBuilder
+    private func notePane(_ note: Note) -> some View {
         switch route {
         case .media(_, let item):
             InspectorView(note: note, item: item, media: media, folders: folders)
@@ -304,7 +329,11 @@ struct ContentView: View {
     /// Keeps the middle at least 360 points wide.
     private func clampPane(_ width: CGFloat, total: CGFloat) -> CGFloat {
         let sidebar: CGFloat = showSidebar ? SidebarView.width : 0
-        let minPane: CGFloat = rightPaneIsInspector ? 260 : 300
+        let minPane: CGFloat = switch paneKind {
+        case .inspector: 260
+        case .media: 300
+        case .assistant: 320
+        }
         let maxPane = max(minPane, total - sidebar - 12 - 360)
         return min(max(width, minPane), maxPane)
     }
@@ -312,8 +341,11 @@ struct ContentView: View {
     /// The live drag width, else the remembered width for this pane, else its default.
     private func paneWidth(total: CGFloat) -> CGFloat {
         if let live = paneDragLive { return clampPane(CGFloat(live), total: total) }
-        let saved = rightPaneIsInspector ? inspectorWidth : mediaPaneWidth
-        let fallback: CGFloat = rightPaneIsInspector ? 320 : 420
+        let (saved, fallback): (Double, CGFloat) = switch paneKind {
+        case .inspector: (inspectorWidth, 320)
+        case .media: (mediaPaneWidth, 420)
+        case .assistant: (assistantWidth, 380)
+        }
         return clampPane(saved > 0 ? CGFloat(saved) : fallback, total: total)
     }
 
@@ -355,7 +387,11 @@ struct ContentView: View {
                 }
                 .onEnded { _ in
                     if let live = paneDragLive {
-                        if rightPaneIsInspector { inspectorWidth = live } else { mediaPaneWidth = live }
+                        switch paneKind {
+                        case .inspector: inspectorWidth = live
+                        case .media: mediaPaneWidth = live
+                        case .assistant: assistantWidth = live
+                        }
                     }
                     paneDragStart = nil
                     paneDragLive = nil

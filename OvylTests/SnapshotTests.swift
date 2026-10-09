@@ -224,8 +224,10 @@ struct SnapshotTests {
         size: CGSize = CGSize(width: 1320, height: 860),
         prepare: ((NSWindow) -> Void)? = nil
     ) async throws {
+        // The empty states' motion is held at a settled moment.
         let root = view
             .environment(ProcessingCenter.shared)
+            .environment(\.motionTime, 6.2)
             .modelContainer(container)
         let hosting = NSHostingView(rootView: root)
         // Like a SwiftUI window: content sets the minimum size, not the size.

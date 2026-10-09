@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import UniformTypeIdentifiers
 
 /// Writes the title, summary, key points and section headings with Apple's
 /// on-device language model. The transcript, captions or text from pictures
@@ -59,12 +60,15 @@ nonisolated enum SmartFormatter {
 
         // Room for the instructions, the response schema and the response.
         let budget = max(1200, model.contextSize - 1400)
-        var header = "Video: \"\(fileName)\", \(TimeFormat.duration(duration))."
+        // A recording without picture is talked about as audio, not a video.
+        let isAudio = UTType(filenameExtension: (fileName as NSString).pathExtension)?.conforms(to: .audio) == true
+        let noun = isAudio ? "recording" : "video"
+        var header = "\(isAudio ? "Recording" : "Video"): \"\(fileName)\", \(TimeFormat.duration(duration))."
         if !screenTitles.isEmpty {
             header += "\nShown on screen throughout: \(screenTitles.map { "\"\($0)\"" }.joined(separator: ", "))."
         }
         if fromCaptions {
-            header += "\nThe video has no speech. Its message is in the captions on screen, given below as the transcript."
+            header += "\nThe \(noun) has no speech. Its message is in the captions on screen, given below as the transcript."
         }
 
         do {
@@ -72,7 +76,7 @@ nonisolated enum SmartFormatter {
                 guard !moments.isEmpty else {
                     let overview = try await respond(
                         GeneratedOverview.self,
-                        prompt: "\(header)\n\nWrite a title, a short summary, and key points for notes about this video."
+                        prompt: "\(header)\n\nWrite a title, a short summary, and key points for notes about this \(noun)."
                     )
                     return Outline(title: overview.title, summary: overview.summary, keyPoints: clean(overview.keyPoints))
                 }
@@ -81,10 +85,10 @@ nonisolated enum SmartFormatter {
                     GeneratedOverview.self,
                     prompt: """
                     \(header)
-                    The video has no speech. This is the text that appeared on screen:
+                    The \(noun) has no speech. This is the text that appeared on screen:
                     \(screen)
 
-                    Write a title, a short summary, and key points for notes about this video.
+                    Write a title, a short summary, and key points for notes about this \(noun).
                     """
                 )
                 return Outline(title: overview.title, summary: overview.summary, keyPoints: clean(overview.keyPoints))
@@ -126,10 +130,10 @@ nonisolated enum SmartFormatter {
                 GeneratedOverview.self,
                 prompt: """
                 \(header)
-                Summaries of the video's parts, in order:
+                Summaries of the \(noun)'s parts, in order:
                 \(summaries.joined(separator: "\n"))
                 \(screen.isEmpty ? "" : "\nText that appeared on screen:\n\(screen)\n")
-                Write a title, a short summary of the whole video, and its key points.
+                Write a title, a short summary of the whole \(noun), and its key points.
                 """
             )
             return Outline(

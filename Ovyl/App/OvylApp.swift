@@ -7,6 +7,10 @@ struct OvylApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var center = ProcessingCenter.shared
 
+    init() {
+        OvylFonts.register()
+    }
+
     var body: some Scene {
         Window("Ovyl", id: "main") {
             ContentView()
@@ -29,12 +33,13 @@ struct OvylCommands: Commands {
     let center: ProcessingCenter
     @AppStorage("showSidebar") private var showSidebar = true
     @AppStorage("showMedia") private var showMedia = true
+    @AppStorage("showAssistant") private var showAssistant = false
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Note from Video or Pictures…") { center.isImporterPresented = true }
+            Button("New Note from Video, Audio or Pictures…") { center.isImporterPresented = true }
                 .keyboardShortcut("n")
-            Button("Open Video or Pictures…") { center.isImporterPresented = true }
+            Button("Open Video, Audio or Pictures…") { center.isImporterPresented = true }
                 .keyboardShortcut("o")
             Divider()
             Button("New Folder") {
@@ -47,8 +52,17 @@ struct OvylCommands: Commands {
         CommandGroup(replacing: .sidebar) {
             Button(showSidebar ? "Hide Sidebar" : "Show Sidebar") { showSidebar.toggle() }
                 .keyboardShortcut(".", modifiers: .command)
-            Button(showMedia ? "Hide Media" : "Show Media") { showMedia.toggle() }
-                .keyboardShortcut("p", modifiers: .command)
+            Button(showMedia ? "Hide Media" : "Show Media") {
+                if showAssistant {
+                    showAssistant = false
+                    showMedia = true
+                } else {
+                    showMedia.toggle()
+                }
+            }
+            .keyboardShortcut("p", modifiers: .command)
+            Button(showAssistant ? "Close Assistant" : "Show Assistant") { showAssistant.toggle() }
+                .keyboardShortcut("j", modifiers: .command)
         }
     }
 }
