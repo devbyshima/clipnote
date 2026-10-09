@@ -78,6 +78,10 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHumanReadableCopyright: Everything stays on this Mac.
         NSSpeechRecognitionUsageDescription: Ovyl transcribes the speech in your videos on this Mac. Nothing leaves your computer.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.fulltimestudio.ovyl.note
+            UTTypeDescription: Ovyl Note
+            UTTypeConformsTo: [public.data]
         CFBundleDocumentTypes:
           - CFBundleTypeName: Video
             CFBundleTypeRole: Viewer

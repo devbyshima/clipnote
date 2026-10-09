@@ -14,6 +14,8 @@ final class ProcessingCenter {
     var importError: String?
     /// The most recently imported note, so the window can select it.
     private(set) var lastImportedID: UUID?
+    /// A folder just made, so the sidebar can start renaming it.
+    var folderToRename: UUID?
     private(set) var processingID: UUID?
     private(set) var speechPhase: WhisperService.Phase = .idle
 
@@ -22,6 +24,7 @@ final class ProcessingCenter {
     @ObservationIgnored private var currentRun: Task<PipelineResult, any Error>?
     @ObservationIgnored private let pipeline = ClipPipeline()
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var observingSpeech = false
 
     private init() {
         container = Self.makeContainer()
@@ -33,33 +36,41 @@ final class ProcessingCenter {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
-    /// Picks up notes left unfinished when the app last quit, and loads the
-    /// speech model in the background so the first video starts quickly.
+    /// Picks up notes left unfinished when the app last quit. The speech
+    /// model isn't loaded until a video needs it, so launching stays light.
     func start() {
         guard !started, !Self.isRunningTests else { return }
         started = true
+        observeSpeechModel()
         let unfinished = FetchDescriptor<Note>(sortBy: [SortDescriptor(\.createdAt)])
         for note in (try? context.fetch(unfinished)) ?? [] where note.status == .queued || note.status == .processing {
             enqueue(note)
         }
-        prepareSpeechModel()
     }
 
+    /// Starts loading the speech model, so it's ready by the time a video's
+    /// audio has been read. Loading twice is harmless.
     func prepareSpeechModel() {
-        guard WhisperEngine.isBundled else { return }
+        guard WhisperEngine.isBundled, !Self.isRunningTests else { return }
+        observeSpeechModel()
+        Task { await WhisperService.shared.prepare() }
+    }
+
+    /// Follows the speech model's state for the sidebar.
+    private func observeSpeechModel() {
+        guard WhisperEngine.isBundled, !observingSpeech else { return }
+        observingSpeech = true
         Task {
-            let phases = await WhisperService.shared.phases()
-            await WhisperService.shared.prepare()
-            for await phase in phases { speechPhase = phase }
+            for await phase in await WhisperService.shared.phases() { speechPhase = phase }
         }
     }
 
     // MARK: Importing
 
     /// Makes a note from each video or audio file, and one note from all
-    /// the pictures, in file name order.
+    /// the pictures, in file name order, in `folderID` when given.
     @discardableResult
-    func importFiles(_ urls: [URL]) -> [Note] {
+    func importFiles(_ urls: [URL], into folderID: UUID? = nil) -> [Note] {
         var created: [Note] = []
         var pictures: [(name: String, bookmark: Data?)] = []
         var skipped: [String] = []
@@ -82,6 +93,7 @@ final class ProcessingCenter {
             context.insert(note)
             created.append(note)
         }
+        for note in created { note.folderID = folderID }
         save()
         if !skipped.isEmpty {
             importError = "Ovyl makes notes from videos, audio, and pictures. Skipped: \(skipped.joined(separator: ", "))."
@@ -108,6 +120,10 @@ final class ProcessingCenter {
     // MARK: Queue
 
     func enqueue(_ note: Note) {
+        // A video will need the speech model unless Apple Speech goes first.
+        if note.kind == .video, PipelineOptions.fromDefaults().engine != .apple {
+            prepareSpeechModel()
+        }
         note.status = .queued
         note.stage = "Waiting"
         note.progress = 0
@@ -137,6 +153,48 @@ final class ProcessingCenter {
 
     func save() {
         try? context.save()
+    }
+
+    // MARK: Folders
+
+    /// Makes a folder named "Untitled folder" (numbered if taken) and asks the
+    /// sidebar to rename it.
+    @discardableResult
+    func createFolder() -> Folder {
+        let folders = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
+        let taken = Set(folders.map(\.name))
+        var name = "Untitled folder"
+        var number = 2
+        while taken.contains(name) {
+            name = "Untitled folder \(number)"
+            number += 1
+        }
+        let folder = Folder(name: name, colorName: Folder.colors[folders.count % Folder.colors.count])
+        context.insert(folder)
+        save()
+        folderToRename = folder.id
+        return folder
+    }
+
+    func rename(_ folder: Folder, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != folder.name else { return }
+        folder.name = name
+        save()
+    }
+
+    /// Deletes the folder; its notes stay, out of any folder.
+    func delete(_ folder: Folder) {
+        let id = folder.id
+        let inside = FetchDescriptor<Note>(predicate: #Predicate { $0.folderID == id })
+        for note in (try? context.fetch(inside)) ?? [] { note.folderID = nil }
+        context.delete(folder)
+        save()
+    }
+
+    func move(_ noteIDs: [UUID], to folderID: UUID?) {
+        for id in noteIDs { note(with: id)?.folderID = folderID }
+        save()
     }
 
     func note(with id: UUID) -> Note? {
@@ -194,7 +252,10 @@ final class ProcessingCenter {
         do {
             let result = try await run.value
             if !note.titleEdited { note.title = result.title }
+            // Made again, the note's text is Ovyl's new text, not earlier edits.
+            note.editedMarkdown = nil
             note.content = result.content
+            note.updatedAt = .now
             note.duration = result.duration
             note.status = .ready
             note.stage = ""
@@ -234,7 +295,7 @@ final class ProcessingCenter {
         let folder = URL.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appending(path: "Ovyl.store")
-        let schema = Schema([Note.self])
+        let schema = Schema([Note.self, Folder.self])
         if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
             return container
         }

@@ -56,5 +56,18 @@
 	<string>Everything stays on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Ovyl transcribes the speech in your videos on this Mac. Nothing leaves your computer.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Ovyl Note</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.fulltimestudio.ovyl.note</string>
+		</dict>
+	</array>
 </dict>
 </plist>

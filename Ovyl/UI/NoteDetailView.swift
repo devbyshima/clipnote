@@ -1,18 +1,71 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct NoteDetailView: View {
-    @Environment(ProcessingCenter.self) private var center
+/// The middle pane for an open note: the note itself once it's made, or its
+/// progress, or what went wrong.
+struct NotePageView: View {
     let note: Note
+    let folders: [Folder]
+    var startsEditing = false
+    var onLink: (URL) -> OpenURLAction.Result
+
+    private var folderName: String? {
+        note.folderID.flatMap { id in folders.first { $0.id == id }?.name }
+    }
 
     var body: some View {
         switch note.status {
         case .ready:
-            NoteDocumentView(note: note)
-        case .queued, .processing:
-            ProcessingView(note: note)
-        case .failed:
-            FailedView(note: note)
+            NoteDocumentView(note: note, folders: folders, folderName: folderName, startsEditing: startsEditing, onLink: onLink)
+        case .queued, .processing, .failed:
+            VStack(spacing: 0) {
+                PaneToolbar {
+                    NoteTitle(note: note, subtitle: folderName)
+                } trailing: {
+                    PillGroup {
+                        PillMenu(help: "More") { NoteMenuItems(note: note, folders: folders) }
+                    }
+                    RightPaneToggle()
+                }
+                if note.status == .failed {
+                    FailedView(note: note)
+                } else {
+                    ProcessingView(note: note)
+                }
+            }
+            .background(Color.ovylBG)
+        }
+    }
+}
+
+/// The note's title and, under it, its folder or file, centered in a toolbar.
+struct NoteTitle: View {
+    let note: Note
+    var subtitle: String?
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(note.displayTitle)
+                .font(.system(size: 13.5, weight: .medium))
+                .truncationMode(.tail)
+            Text(subtitle ?? note.sourceName)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.ovylSecondary)
+                .truncationMode(.middle)
+        }
+        .lineLimit(1)
+    }
+}
+
+/// Shows or hides the right pane (⌘P).
+struct RightPaneToggle: View {
+    @AppStorage("showMedia") private var showRightPane = true
+
+    var body: some View {
+        PillGroup {
+            PillButton(symbol: "sidebar.right", help: showRightPane ? "Hide the right pane (⌘P)" : "Show the right pane (⌘P)") {
+                showRightPane.toggle()
+            }
         }
     }
 }
@@ -22,36 +75,37 @@ struct ProcessingView: View {
     let note: Note
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 18) {
             Image(systemName: "waveform")
-                .font(.system(size: 54, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(Color.ovylAccent)
                 .symbolEffect(.variableColor.iterative.reversing, isActive: note.status == .processing)
-                .frame(height: 64)
+                .frame(height: 50)
 
             VStack(spacing: 6) {
                 Text(note.displayTitle)
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .multilineTextAlignment(.center)
                 Text(note.status == .queued ? "Waiting for the note ahead of it" : note.stage)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.ovylSecondary)
                     .contentTransition(.opacity)
                     .animation(.default, value: note.stage)
             }
 
             if note.status == .processing {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     ProgressView(value: note.progress)
-                        .frame(width: 360)
+                        .frame(width: 300)
                         .animation(.easeOut(duration: 0.3), value: note.progress)
                     Text(note.progress, format: .percent.precision(.fractionLength(0)))
-                        .font(.caption.monospacedDigit())
+                        .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(.tertiary)
                 }
             }
 
-            Button("Stop", role: .cancel) { center.stop(note) }
-                .controlSize(.large)
+            PlainCapsuleButton(title: "Stop") { center.stop(note) }
+                .keyboardShortcut(.cancelAction)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,20 +118,22 @@ struct FailedView: View {
     @State private var isLocating = false
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Couldn't Make This Note", systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(note.errorMessage ?? "Something went wrong while making this note.")
-        } actions: {
-            HStack {
-                Button("Try Again") { center.enqueue(note) }
-                    .buttonStyle(.borderedProminent)
+        VStack(spacing: 16) {
+            EmptyState(
+                symbol: "exclamationmark.triangle",
+                title: "Couldn't make this note",
+                message: note.errorMessage ?? "Something went wrong while making this note."
+            )
+            .frame(maxHeight: 220)
+            HStack(spacing: 10) {
+                FilledButton(title: "Try Again", symbol: "arrow.clockwise") { center.enqueue(note) }
                 if note.kind == .video {
-                    Button("Locate Video…") { isLocating = true }
+                    PlainCapsuleButton(title: "Locate Video…") { isLocating = true }
                 }
             }
-            .controlSize(.large)
         }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fileImporter(isPresented: $isLocating, allowedContentTypes: [.audiovisualContent]) { result in
             guard case .success(let url) = result else { return }
             let accessing = url.startAccessingSecurityScopedResource()
@@ -85,67 +141,6 @@ struct FailedView: View {
             note.sourceBookmark = try? Note.bookmark(for: url)
             note.sourceName = url.lastPathComponent
             center.enqueue(note)
-        }
-    }
-}
-
-struct WelcomeView: View {
-    @Environment(ProcessingCenter.self) private var center
-    let hasNotes: Bool
-
-    var body: some View {
-        VStack(spacing: 26) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.gradient.opacity(0.14))
-                    .frame(width: 108, height: 108)
-                Image(systemName: "film.stack")
-                    .font(.system(size: 46, weight: .medium))
-                    .foregroundStyle(Color.accentColor.gradient)
-            }
-
-            VStack(spacing: 10) {
-                Text(hasNotes ? "Select a note, or drop a video or pictures" : "Drop a video or pictures to make a note")
-                    .font(.largeTitle.weight(.bold))
-                    .multilineTextAlignment(.center)
-                Text("Ovyl transcribes what's said, reads subtitles and other text on screen or in pictures, leaves songs out, and writes it all up as a clean, organized note.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 500)
-            }
-
-            Button {
-                center.isImporterPresented = true
-            } label: {
-                Label("Choose Files…", systemImage: "plus")
-                    .padding(.horizontal, 6)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-
-            HStack(spacing: 12) {
-                Feature(symbol: "waveform", title: "Transcribes speech")
-                Feature(symbol: "text.viewfinder", title: "Reads text in videos and pictures")
-                Feature(symbol: "lock.fill", title: "Stays on this Mac")
-            }
-            .padding(.top, 8)
-        }
-        .padding(48)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private struct Feature: View {
-        let symbol: String
-        let title: String
-
-        var body: some View {
-            Label(title, systemImage: symbol)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(.quaternary.opacity(0.6), in: Capsule())
         }
     }
 }

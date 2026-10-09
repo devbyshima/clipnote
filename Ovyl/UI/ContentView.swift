@@ -1,56 +1,116 @@
+import AppKit
 import SwiftData
 import SwiftUI
 
+/// The window: the sidebar on the left, a list of notes or the open note in
+/// the middle, and the note's media on the right. The media's frames or info
+/// moves the media into the middle, with its details on the right. Both side
+/// panes collapse (⌘. and ⌘P) and the right one resizes by its edge.
 struct ContentView: View {
     @Environment(ProcessingCenter.self) private var center
     @Query(sort: \Note.createdAt, order: .reverse) private var notes: [Note]
-    @State private var selection: UUID?
-    @State private var searchText = ""
+    @Query(sort: \Folder.createdAt) private var folders: [Folder]
+    @State private var navigator: Navigator
+    @State private var media = NoteMedia()
     @State private var isDropTargeted = false
+    @State private var keyMonitor: Any?
+    @AppStorage("showSidebar") private var showSidebar = true
+    @AppStorage("showMedia") private var showRightPane = true
+    @AppStorage("mediaPaneWidth") private var mediaPaneWidth = 0.0
+    @AppStorage("inspectorWidth") private var inspectorWidth = 0.0
 
-    init(initialSelection: UUID? = nil) {
-        _selection = State(initialValue: initialSelection)
+    // Resizing the right pane: the width when the drag began, the live width
+    // while dragging (so settings aren't written every frame), and the cursor.
+    @State private var paneDragStart: Double?
+    @State private var paneDragLive: Double?
+    @State private var paneCursorPushed = false
+    @State private var paneHandleHover = false
+
+    private let startsEditing: Bool
+    private let spring = Animation.spring(response: 0.3, dampingFraction: 0.86)
+
+    init(route: Route = .home, startsEditing: Bool = false, showsNoteInfo: Bool = false) {
+        _navigator = State(initialValue: Navigator(route, showsNoteInfo: showsNoteInfo))
+        self.startsEditing = startsEditing
     }
 
-    private var filteredNotes: [Note] {
-        guard !searchText.isEmpty else { return notes }
-        return notes.filter {
-            $0.displayTitle.localizedStandardContains(searchText)
-                || $0.searchText.localizedStandardContains(searchText)
+    init(initialSelection: UUID?) {
+        self.init(route: initialSelection.map(Route.note) ?? .home)
+    }
+
+    private var route: Route { navigator.route }
+
+    private var currentNote: Note? {
+        route.noteID.flatMap { id in notes.first { $0.id == id } }
+    }
+
+    /// The right pane shows the media beside a note (or the note's info), and
+    /// the media's details once the media is in the middle.
+    private var rightPaneIsInspector: Bool {
+        switch route {
+        case .gallery, .media: true
+        case .note: navigator.showsNoteInfo
+        default: false
         }
+    }
+
+    private var rightVisible: Bool { showRightPane && currentNote != nil }
+
+    /// Where new notes go: the folder being looked at, if any.
+    private var importFolderID: UUID? {
+        if case .folder(let id) = route { return id }
+        return nil
     }
 
     var body: some View {
         @Bindable var center = center
-        NavigationSplitView {
-            NoteListView(notes: filteredNotes, selection: $selection)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
-        } detail: {
-            if let note = notes.first(where: { $0.id == selection }) {
-                NoteDetailView(note: note)
-                    .id(note.id)
-            } else {
-                WelcomeView(hasNotes: !notes.isEmpty)
-            }
-        }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search notes")
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button("Import", systemImage: "plus") {
-                    center.isImporterPresented = true
+
+        ZStack {
+            Color.ovylBG.ignoresSafeArea()
+
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    if showSidebar {
+                        SidebarView(notes: notes, folders: folders, onNew: newNote)
+                            // A plain slide: fading the pane every frame is what makes it feel slow.
+                            .transition(.move(edge: .leading))
+                    }
+
+                    middle
+                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+
+                    if rightVisible, let note = currentNote {
+                        // The handle and pane slide out together.
+                        HStack(spacing: 0) {
+                            paneResizeHandle(total: geo.size.width)
+                            rightPane(note)
+                                .frame(width: paneWidth(total: geo.size.width))
+                        }
+                        .transition(.move(edge: .trailing))
+                    }
                 }
-                .help("Import a video or pictures (⌘O)")
+                // Pinned leading, so any overflow spills off the right and the sidebar never moves.
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                .animation(spring, value: showSidebar)
+                .animation(spring, value: rightVisible)
+                .animation(spring, value: rightPaneIsInspector)
             }
+            // The panes' headers share the top row with the traffic lights.
+            .ignoresSafeArea(.container, edges: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(navigator)
+        .background { MainWindowStyler() }
+        .background { shortcuts }
         .fileImporter(
             isPresented: $center.isImporterPresented,
             allowedContentTypes: [.audiovisualContent, .image],
             allowsMultipleSelection: true
         ) { result in
-            if case .success(let urls) = result { center.importFiles(urls) }
+            if case .success(let urls) = result { center.importFiles(urls, into: importFolderID) }
         }
         .dropDestination(for: URL.self) { urls, _ in
-            !center.importFiles(urls).isEmpty
+            !center.importFiles(urls, into: importFolderID).isEmpty
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
         }
@@ -65,31 +125,262 @@ struct ContentView: View {
         } message: {
             Text(center.importError ?? "")
         }
+        .alert(deleteTitle, isPresented: Binding(
+            get: { navigator.pendingDelete != nil },
+            set: { if !$0 { navigator.pendingDelete = nil } }
+        )) {
+            Button("Delete", role: .destructive) { deletePending() }
+            Button("Cancel", role: .cancel) { navigator.pendingDelete = nil }
+        } message: {
+            Text("The note and its frames are removed from Ovyl. The original video or pictures stay where they are.")
+        }
         .onChange(of: center.lastImportedID) { _, id in
-            if let id {
-                searchText = ""
-                selection = id
+            if let id { navigator.go(.note(id)) }
+        }
+        .onChange(of: route.noteID) { media.show(currentNote) }
+        .onChange(of: showRightPane) { _, shows in
+            if !shows, case .note = route { media.player.pause() }
+        }
+        .onChange(of: notes.map(\.id)) { prune() }
+        .onChange(of: folders.map(\.id)) { prune() }
+        .onAppear {
+            media.show(currentNote)
+            installKeyMonitor()
+        }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+        }
+    }
+
+    // MARK: Panes
+
+    @ViewBuilder
+    private var middle: some View {
+        switch route {
+        case .home:
+            home
+        case .folder(let id):
+            if let folder = folders.first(where: { $0.id == id }) {
+                NotesListView(title: folder.name, folder: folder, notes: notes.filter { $0.folderID == id }, folders: folders, onNew: newNote)
+                    .id(id)
+            } else {
+                home
+            }
+        case .note:
+            if let note = currentNote {
+                NotePageView(note: note, folders: folders, startsEditing: startsEditing) { handleLink($0, from: note) }
+                    .id(note.id)
+            } else {
+                home
+            }
+        case .gallery:
+            if let note = currentNote {
+                GalleryView(note: note, media: media)
+            } else {
+                home
+            }
+        case .media(_, let item):
+            if let note = currentNote {
+                MediaViewer(note: note, item: item, media: media)
+            } else {
+                home
             }
         }
-        .onAppear {
-            if selection == nil { selection = notes.first?.id }
+    }
+
+    private var home: some View {
+        NotesListView(title: "Home", notes: notes, folders: folders, onNew: newNote)
+    }
+
+    @ViewBuilder
+    private func rightPane(_ note: Note) -> some View {
+        switch route {
+        case .media(_, let item):
+            InspectorView(note: note, item: item, media: media, folders: folders)
+        case .gallery:
+            InspectorView(note: note, item: nil, media: media, folders: folders)
+        default:
+            if navigator.showsNoteInfo {
+                NoteInfoView(note: note, folders: folders)
+            } else {
+                MediaPane(note: note, media: media)
+            }
         }
+    }
+
+    // MARK: Actions
+
+    private func newNote() {
+        center.isImporterPresented = true
+    }
+
+    private var deleteTitle: String {
+        let note = navigator.pendingDelete.flatMap { id in notes.first { $0.id == id } }
+        return "Delete “\(note?.displayTitle ?? "this note")”?"
+    }
+
+    private func deletePending() {
+        if let id = navigator.pendingDelete, let note = notes.first(where: { $0.id == id }) {
+            center.delete(note)
+        }
+        navigator.pendingDelete = nil
+    }
+
+    private func prune() {
+        navigator.prune(notes: Set(notes.map(\.id)), folders: Set(folders.map(\.id)))
+    }
+
+    /// Timestamps play the video, picture links show the picture, and
+    /// [[wikilinks]] open the note with that title.
+    private func handleLink(_ url: URL, from note: Note) -> OpenURLAction.Result {
+        if let seconds = NoteMarkdown.seconds(in: url) {
+            showRightPane = true
+            media.play(note, at: seconds)
+            return .handled
+        }
+        if let index = NoteMarkdown.pictureIndex(in: url) {
+            let id = note.content?.pictures.indices.contains(index) == true ? note.content?.pictures[index].id : nil
+            let position = media.items(for: note).firstIndex { $0.id == id }
+            navigator.go(.media(note.id, item: position ?? 0))
+            return .handled
+        }
+        if url.scheme == "ovyl-note" {
+            let title = (url.absoluteString.dropFirst("ovyl-note:".count)).removingPercentEncoding ?? ""
+            if let target = notes.first(where: { $0.displayTitle.localizedCaseInsensitiveCompare(title) == .orderedSame }) {
+                navigator.go(.note(target.id))
+            }
+            return .handled
+        }
+        return .systemAction
+    }
+
+    // MARK: Keys
+
+    /// ⌘[ and ⌘] go back and forward.
+    private var shortcuts: some View {
+        ZStack {
+            Button { navigator.goBack() } label: { Color.clear.frame(width: 0, height: 0) }
+                .keyboardShortcut("[", modifiers: .command)
+            Button { navigator.goForward() } label: { Color.clear.frame(width: 0, height: 0) }
+                .keyboardShortcut("]", modifiers: .command)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    /// F, I and D open the frames, open the info, and delete, for the open
+    /// note, unless text is being typed.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        let navigator = navigator
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            let plain = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+            let handled = MainActor.assumeIsolated { Self.handleKey(key, plain: plain, navigator: navigator) }
+            return handled ? nil : event
+        }
+    }
+
+    private static func handleKey(_ key: String, plain: Bool, navigator: Navigator) -> Bool {
+        guard plain,
+              !(NSApp.keyWindow?.firstResponder is NSText),
+              navigator.pendingDelete == nil,
+              case .note(let id) = navigator.route
+        else { return false }
+        switch key {
+        case "f": navigator.go(.gallery(id))
+        case "i": navigator.go(.media(id, item: nil))
+        case "d": navigator.pendingDelete = id
+        default: return false
+        }
+        return true
+    }
+
+    // MARK: Right pane sizing
+
+    /// Keeps the middle at least 360 points wide.
+    private func clampPane(_ width: CGFloat, total: CGFloat) -> CGFloat {
+        let sidebar: CGFloat = showSidebar ? SidebarView.width : 0
+        let minPane: CGFloat = rightPaneIsInspector ? 260 : 300
+        let maxPane = max(minPane, total - sidebar - 12 - 360)
+        return min(max(width, minPane), maxPane)
+    }
+
+    /// The live drag width, else the remembered width for this pane, else its default.
+    private func paneWidth(total: CGFloat) -> CGFloat {
+        if let live = paneDragLive { return clampPane(CGFloat(live), total: total) }
+        let saved = rightPaneIsInspector ? inspectorWidth : mediaPaneWidth
+        let fallback: CGFloat = rightPaneIsInspector ? 320 : 420
+        return clampPane(saved > 0 ? CGFloat(saved) : fallback, total: total)
+    }
+
+    /// A hairline with a wide grab strip: drag to resize the pane. It turns
+    /// blue while hovered or dragged.
+    private func paneResizeHandle(total: CGFloat) -> some View {
+        let active = paneHandleHover || paneDragLive != nil
+        return ZStack {
+            Color.clear.frame(width: 12).contentShape(Rectangle())
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(active ? Color.ovylAccent.opacity(0.7) : Color.ovylBorder)
+                .frame(width: active ? 3 : 1)
+                .frame(maxHeight: .infinity)
+                .ignoresSafeArea(edges: .top)
+        }
+        .frame(maxHeight: .infinity)
+        .background(Color.ovylBG.ignoresSafeArea(edges: .top))
+        .animation(.easeOut(duration: 0.12), value: active)
+        .onHover { inside in
+            paneHandleHover = inside
+            if inside {
+                if !paneCursorPushed { NSCursor.resizeLeftRight.push(); paneCursorPushed = true }
+            } else if paneCursorPushed, paneDragLive == nil {
+                NSCursor.pop()
+                paneCursorPushed = false
+            }
+        }
+        .onDisappear {
+            if paneCursorPushed { NSCursor.pop(); paneCursorPushed = false }
+        }
+        .gesture(
+            // Global coordinates: the handle moves as the pane widens, which
+            // would make a local translation jitter.
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = paneDragStart ?? Double(paneWidth(total: total))
+                    if paneDragStart == nil { paneDragStart = start }
+                    paneDragLive = Double(clampPane(CGFloat(start) - value.translation.width, total: total))
+                }
+                .onEnded { _ in
+                    if let live = paneDragLive {
+                        if rightPaneIsInspector { inspectorWidth = live } else { mediaPaneWidth = live }
+                    }
+                    paneDragStart = nil
+                    paneDragLive = nil
+                    if paneCursorPushed, !paneHandleHover { NSCursor.pop(); paneCursorPushed = false }
+                }
+        )
     }
 }
 
 struct DropOverlay: View {
     var body: some View {
         ZStack {
-            Rectangle().fill(.background.opacity(0.75))
+            Rectangle().fill(Color.ovylBG.opacity(0.85))
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                .strokeBorder(Color.ovylAccent, style: StrokeStyle(lineWidth: 2, dash: [6, 6]))
                 .padding(18)
-            VStack(spacing: 12) {
-                Image(systemName: "arrow.down.doc.fill")
-                    .font(.system(size: 44, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+            VStack(spacing: 8) {
+                Image(systemName: "arrow.down.doc")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Color.ovylAccent)
                 Text("Drop to make a note")
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 20, weight: .semibold))
+                Text("Videos, audio, or pictures")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.ovylSecondary)
             }
         }
         .allowsHitTesting(false)

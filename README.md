@@ -12,6 +12,14 @@ Drop in pictures (screenshots, photos of pages or whiteboards) and Ovyl reads th
 
 Everything runs on the Mac. The app has no network entitlement.
 
+## The window
+
+- **Left:** Home (every note), New (make a note from a video or pictures), and folders, each with its count. Drag notes onto a folder to file them.
+- **Middle:** the notes, grouped by day, or the open note. A note opens in reader mode with just its title and text, with a Sans or Serif choice and a text size at the bottom. Edit (⌘E) edits its Markdown, showing the syntax only on the line being edited; selecting text brings up a formatting bar, and ⌘B, ⌘I and ⌘K work. Copy copies the note as Markdown. Timestamps in the note are links that play the video from that moment.
+- **Right:** the note's video on a dotted canvas, with Frames (F), Info (I) and Delete (D) under it. Frames moves the frames grabbed from on-screen text into the middle as a grid; Info moves the video into the middle and shows its details on the right. Back and forward (⌘[ and ⌘]) return to the note. The note's Info button shows its details and summary on the right instead.
+
+Both side panes slide away (⌘. for the left, ⌘P for the right), and the right one resizes by dragging its edge. New notes go into the folder you're looking at. ⌘N or ⌘O makes a note, ⇧⌘N makes a folder.
+
 ## How it works
 
 | Step | Engine | Where it comes from |
@@ -45,8 +53,9 @@ Measured on the dev Mac with `./scripts/build.sh bench`, on about 3 minutes of s
 
 The Neural Engine is the fastest and uses the least power, but the first time a Mac loads the model, Core ML compiles it for that Mac's Neural Engine. Apple doesn't let apps ship that compiled form, and it's cached per model location and OS version. `WhisperService` handles this:
 
-- **First launch:** the hybrid loads first, so videos transcribe after about a minute (66 s measured from a cold start), while the Neural Engine compiles in the background (about 6 minutes). Then every video uses the Neural Engine and the hybrid is unloaded.
-- **Later launches:** the Neural Engine loads directly (about 5 to 12 s). If Core ML dropped its cache (after an OS update, for example), the hybrid takes over after 8 seconds and the compile runs again in the background.
+- **Nothing loads at launch.** The model loads when you add a video (or reopen the app with videos still waiting), so the app opens light and nothing is compiled until it's needed.
+- **First video:** the hybrid loads first, so the video transcribes after about a minute (66 s measured from a cold start), while the Neural Engine compiles in the background (about 6 minutes). Then every video uses the Neural Engine and the hybrid is unloaded.
+- **Later videos:** the Neural Engine loads directly (about 5 to 12 s). If Core ML dropped its cache (after an OS update, for example), the hybrid takes over after 8 seconds and the compile runs again in the background.
 - **Idle:** after 15 minutes without videos the model is unloaded to free memory.
 
 Other efficiency choices: Apple Intelligence is warmed up while speech is transcribed, unchanged video frames skip text recognition, and frames are checked half as often in Low Power Mode or when the Mac runs hot.
@@ -73,8 +82,8 @@ The test fixtures are three narrated slides with a burned-in caption, narration 
 ## Layout
 
 - `Ovyl/Pipeline`: audio decoding, music detection, Whisper and Apple Speech engines, on-screen text reader and sorter, picture reader, note composer, smart formatter.
-- `Ovyl/Model`: the SwiftData `Note`, its JSON content, Markdown export.
-- `Ovyl/UI`: SwiftUI views.
+- `Ovyl/Model`: the SwiftData `Note` and `Folder`, the note's JSON content, and its Markdown: written, parsed and exported.
+- `Ovyl/UI`: SwiftUI views: the sidebar, notes list, note page, media pane, frames grid, media viewer and info panes, and the Markdown reader and editor in `Ovyl/UI/Markdown`.
 - `OvylTests`: Swift Testing unit tests and `PipelineIntegrationTests`.
 
 ## Credits

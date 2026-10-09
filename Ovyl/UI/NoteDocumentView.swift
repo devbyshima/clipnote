@@ -2,395 +2,290 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A finished note, laid out for reading: video, title, summary, key points,
-/// then the transcript in sections with on-screen text and music where they
-/// came up. A note from pictures shows each picture above its text.
+/// A finished note. It opens in reader mode: the title, then the note
+/// rendered. Edit mode (⌘E) edits its Markdown, with the syntax shown only on
+/// the line being edited, and saves as you type. Info shows the note's details
+/// and summary in the right pane.
 struct NoteDocumentView: View {
     @Environment(ProcessingCenter.self) private var center
+    @Environment(Navigator.self) private var navigator
+    @AppStorage("showMedia") private var showRightPane = true
     @Bindable var note: Note
-    @State private var content = NoteContent()
-    @State private var timeline: [Timeline.Section] = []
-    @State private var player = PlayerModel()
-    @State private var isEditing = false
-    @State private var draftTitle = ""
-    @State private var isLocating = false
-    @AppStorage("showsVideo") private var showsVideo = true
+    let folders: [Folder]
+    let folderName: String?
+    var onLink: (URL) -> OpenURLAction.Result
 
-    /// Room on the left for timestamps that hang outside the text column.
-    private let gutter: CGFloat = 64
+    @State private var isEditing: Bool
+    @State private var text = ""
+    @State private var blocks: [MarkdownBlock] = []
+    @State private var draftTitle = ""
+    @State private var saveTask: Task<Void, Never>?
+    @State private var copied = false
+    @State private var editor = EditorController()
+    @AppStorage("readerSerif") private var serif = false
+    @AppStorage("readerSize") private var size = 16.0
+
+    init(note: Note, folders: [Folder], folderName: String?, startsEditing: Bool = false, onLink: @escaping (URL) -> OpenURLAction.Result) {
+        self.note = note
+        self.folders = folders
+        self.folderName = folderName
+        self.onLink = onLink
+        _isEditing = State(initialValue: startsEditing)
+    }
+
+    private var style: ReaderStyle { ReaderStyle(size: size, serif: serif) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if showsVideo, isVideo {
-                    videoArea.padding(.bottom, 32)
+        VStack(spacing: 0) {
+            PaneToolbar {
+                NoteTitle(note: note, subtitle: folderName)
+            } trailing: {
+                PillGroup {
+                    PillButton(symbol: "book", help: "Reader (⌘E)", isActive: !isEditing) { setEditing(false) }
+                    PillButton(symbol: "pencil", help: "Edit (⌘E)", isActive: isEditing) { setEditing(true) }
+                    PillButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "Copy the note as Markdown") { copyNote() }
+                    PillButton(symbol: "info.circle", help: "Note info", isActive: showsInfo) { toggleInfo() }
                 }
-                if isEditing { editor } else { reader }
+                PillGroup {
+                    PillMenu(help: "Export and more") { moreItems }
+                }
+                RightPaneToggle()
             }
-            .frame(maxWidth: 740, alignment: .leading)
-            .padding(.leading, gutter + 24)
-            .padding(.trailing, 48)
-            .padding(.top, 30)
-            .padding(.bottom, 80)
-            .frame(maxWidth: .infinity)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    title
+                    content
+                        .padding(.top, 24)
+                }
+                .frame(maxWidth: style.lineWidth, alignment: .leading)
+                .padding(.horizontal, 40)
+                .padding(.top, 34)
+                .padding(.bottom, 140)
+                .frame(maxWidth: .infinity)
+            }
+            .textSelection(.enabled)
+            .tint(Color.ovylAccent)
+            .environment(\.openURL, OpenURLAction(handler: onLink))
+            .environment(\.readerStyle, style)
+            .overlay(alignment: .bottom) {
+                if !isEditing { typographyBar.padding(.bottom, 16) }
+            }
         }
-        .background(Color(nsColor: .textBackgroundColor))
-        .navigationTitle(note.displayTitle)
-        .toolbar { toolbar }
-        .onAppear {
-            reloadContent()
-            if showsVideo, isVideo { player.load(note) }
-        }
-        .onDisappear {
-            if isEditing { commitEdits() }
-            player.unload()
-        }
+        .background(Color.ovylBG)
+        .background { shortcuts }
+        .onAppear(perform: load)
+        .onDisappear(perform: flush)
         .onChange(of: note.contentData) {
-            if !isEditing { reloadContent() }
+            if !isEditing { load() }
         }
-        .onChange(of: showsVideo) { _, shows in
-            guard isVideo else { return }
-            if shows { player.load(note) } else { player.unload() }
-        }
-        .fileImporter(isPresented: $isLocating, allowedContentTypes: [.audiovisualContent]) { result in
-            guard case .success(let url) = result else { return }
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            note.sourceBookmark = try? Note.bookmark(for: url)
-            center.save()
-            player.reload(note)
+        .onChange(of: text) {
+            if isEditing { scheduleSave() }
         }
     }
 
-    private var isVideo: Bool { note.kind == .video }
-
-    // MARK: Reading
+    // MARK: Page
 
     @ViewBuilder
-    private var reader: some View {
-        Text(note.displayTitle)
-            .font(.system(size: 34, weight: .bold))
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-
-        metadata.padding(.top, 10)
-
-        if let notice = content.notice {
-            Label(notice, systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
-                .foregroundStyle(.primary)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.yellow.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .padding(.top, 20)
-        }
-
-        if !content.screenTitles.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Label("On screen throughout", systemImage: "rectangle.and.text.magnifyingglass")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(Array(content.screenTitles.enumerated()), id: \.offset) { _, title in
-                    Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.top, 20)
-        }
-
-        if let summary = content.summary {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Summary")
-                    .font(.caption.weight(.bold))
-                    .textCase(.uppercase)
-                    .tracking(0.6)
-                    .foregroundStyle(Color.accentColor)
-                Text(summary)
-                    .font(.system(size: 15.5))
-                    .lineSpacing(5)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .padding(.top, 26)
-        }
-
-        if !content.keyPoints.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Key Points")
-                    .font(.title3.weight(.semibold))
-                    .padding(.bottom, 2)
-                ForEach(Array(content.keyPoints.enumerated()), id: \.offset) { _, point in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(Image(systemName: "circle.fill"))
-                            .font(.system(size: 6))
-                            .baselineOffset(3)
-                            .foregroundStyle(Color.accentColor)
-                        Text(point)
-                            .font(.system(size: 15))
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .padding(.top, 28)
-        }
-
-        if timeline.isEmpty {
-            Text(content.isPictures
-                 ? "No text was found in the pictures."
-                 : "No speech or on-screen text was found in this video.")
-                .foregroundStyle(.secondary)
-                .padding(.top, 32)
-        }
-
-        ForEach(timeline) { section in
-            VStack(alignment: .leading, spacing: 16) {
-                if let heading = section.heading {
-                    Text(heading)
-                        .font(.system(size: 22, weight: .bold))
-                        .textSelection(.enabled)
-                        .padding(.bottom, 2)
-                }
-                if let picture = section.picture {
-                    PictureView(picture: picture, folder: note.thumbnailsFolder)
-                    if section.entries.isEmpty {
-                        Text("No text was found in this picture.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                ForEach(section.entries) { entry in
-                    switch entry {
-                    case .paragraph(let paragraph):
-                        if paragraph.source == .picture {
-                            paragraphText(paragraph.text)
-                        } else {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                TimestampButton(seconds: paragraph.start) { play(at: paragraph.start) }
-                                    .frame(width: gutter - 12, alignment: .trailing)
-                                paragraphText(paragraph.text)
-                            }
-                            .padding(.leading, -gutter)
-                        }
-                    case .screen(let moment):
-                        if moment.kind == .commentary {
-                            CommentaryRow(moment: moment) { play(at: moment.start) }
-                        } else {
-                            ScreenMomentCard(moment: moment, folder: note.thumbnailsFolder) { play(at: moment.start) }
-                        }
-                    case .music(let span):
-                        MusicRow(span: span) { play(at: span.start) }
-                    }
-                }
-            }
-            .padding(.top, 36)
+    private var title: some View {
+        let font = Font.ovyl(style.titleSize, .bold, serif: serif)
+        if isEditing {
+            TextField("Untitled", text: $draftTitle, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(font)
+                .onSubmit(commitTitle)
+        } else {
+            Text(note.displayTitle)
+                .font(font)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
-
-    private func paragraphText(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 15))
-            .lineSpacing(5)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var metadata: some View {
-        FlowLayout(spacing: 16, lineSpacing: 6) {
-            Label(note.createdAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-            if content.isPictures {
-                Label(content.pictures.count == 1 ? "1 picture" : "\(content.pictures.count) pictures", systemImage: "photo.on.rectangle")
-            } else if note.duration > 0 {
-                Label(TimeFormat.duration(note.duration), systemImage: "clock")
-            }
-            if let code = content.language, let name = Locale.current.localizedString(forLanguageCode: code) {
-                Label(name, systemImage: "globe")
-            }
-            if let engine = content.engine {
-                Label(engine, systemImage: content.paragraphs.contains { $0.source == nil } ? "waveform" : "captions.bubble")
-            }
-            if !content.music.isEmpty {
-                Label("Music left out", systemImage: "music.note")
-            }
-            if content.formattedWithAI {
-                Label("Apple Intelligence", systemImage: "sparkles")
-            }
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-    }
-
-    // MARK: Video
 
     @ViewBuilder
-    private var videoArea: some View {
-        if player.isUnavailable {
-            HStack(spacing: 12) {
-                Image(systemName: "video.slash")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Video not found").font(.headline)
-                    Text("\(note.sourceName) was moved or deleted. The note is safe.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+    private var content: some View {
+        if isEditing {
+            MarkdownEditor(text: $text, controller: editor, style: style)
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Start writing…")
+                            .font(.ovyl(style.size, serif: serif))
+                            .foregroundStyle(Color.ovylFaint)
+                            .allowsHitTesting(false)
+                    }
                 }
-                Spacer()
-                Button("Locate…") { isLocating = true }
-            }
-            .padding(16)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else if let avPlayer = player.player {
-            PlayerView(player: avPlayer)
-                .frame(height: player.hasVideo ? nil : 56)
-                .aspectRatio(player.hasVideo ? 16 / 9 : nil, contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: 440)
-                .background(.black)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                .overlay(alignment: .topLeading) { FormatBar(editor: editor) }
+        } else if blocks.isEmpty {
+            Text("This note is empty. Press ⌘E to write in it.")
+                .font(.ovyl(style.size, serif: serif))
+                .foregroundStyle(Color.ovylFaint)
+        } else {
+            MarkdownView(blocks: blocks) { line in toggleTask(at: line) }
         }
     }
 
-    private func play(at seconds: TimeInterval) {
-        guard isVideo else { return }
-        if !showsVideo {
-            showsVideo = true
-            player.load(note)
+    private var showsInfo: Bool { showRightPane && navigator.showsNoteInfo }
+
+    /// Shows the note's info in the right pane, or goes back to its media.
+    private func toggleInfo() {
+        if showsInfo {
+            navigator.showsNoteInfo = false
+        } else {
+            navigator.showsNoteInfo = true
+            showRightPane = true
         }
-        player.seek(to: seconds)
+    }
+
+    /// Sans or serif, and the text size, as in a reader.
+    private var typographyBar: some View {
+        FloatingBar {
+            segment("Sans", isOn: !serif) { serif = false }
+            segment("Serif", isOn: serif) { serif = true }
+            Rectangle().fill(Color.ovylBorder).frame(width: 1, height: 16).padding(.horizontal, 4)
+            Button { size = max(12, size - 1) } label: {
+                Image(systemName: "minus").frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(size <= 12)
+            Text("\(Int(size))")
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .frame(minWidth: 22)
+            Button { size = min(24, size + 1) } label: {
+                Image(systemName: "plus").frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(size >= 24)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Color.primary.opacity(0.8))
+    }
+
+    private func segment(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: isOn ? .semibold : .regular, design: title == "Serif" ? .serif : .default))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(isOn ? Color.ovylFill : .clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Editing
 
-    @ViewBuilder
-    private var editor: some View {
-        TextField("Title", text: $draftTitle, axis: .vertical)
-            .font(.system(size: 34, weight: .bold))
-            .textFieldStyle(.plain)
-            .editableField()
-
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Summary").font(.caption.weight(.bold)).textCase(.uppercase).foregroundStyle(.secondary)
-            TextField("Add a summary", text: Binding(
-                get: { content.summary ?? "" },
-                set: { content.summary = $0 }
-            ), axis: .vertical)
-            .font(.system(size: 15.5))
-            .textFieldStyle(.plain)
-            .editableField()
-        }
-        .padding(.top, 24)
-
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Key Points").font(.caption.weight(.bold)).textCase(.uppercase).foregroundStyle(.secondary)
-            ForEach(content.keyPoints.indices, id: \.self) { index in
-                TextField("Key point", text: $content.keyPoints[index], axis: .vertical)
-                    .font(.system(size: 15))
-                    .textFieldStyle(.plain)
-                    .editableField()
-            }
-            Button("Add Key Point", systemImage: "plus") { content.keyPoints.append("") }
-                .buttonStyle(.borderless)
-        }
-        .padding(.top, 24)
-
-        ForEach($content.sections) { $section in
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Heading", text: $section.heading)
-                    .font(.system(size: 22, weight: .bold))
-                    .textFieldStyle(.plain)
-                    .editableField()
-                ForEach($section.paragraphs) { $paragraph in
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(paragraph.source == .picture ? "" : TimeFormat.clock(paragraph.start))
-                            .font(.system(size: 12, weight: .medium).monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                            .frame(width: gutter - 12, alignment: .trailing)
-                        TextField("", text: $paragraph.text, axis: .vertical)
-                            .font(.system(size: 15))
-                            .textFieldStyle(.plain)
-                            .editableField()
-                    }
-                    .padding(.leading, -gutter)
-                }
-            }
-            .padding(.top, 32)
-        }
+    private func load() {
+        text = note.markdown
+        blocks = MarkdownDocument.parse(text)
+        draftTitle = note.displayTitle
     }
 
-    private func toggleEditing() {
-        if isEditing {
-            commitEdits()
-        } else {
+    private func setEditing(_ editing: Bool) {
+        guard editing != isEditing else { return }
+        if editing {
             draftTitle = note.displayTitle
-            content = note.content ?? content
+        } else {
+            flush()
+            blocks = MarkdownDocument.parse(text)
         }
-        withAnimation(.snappy) { isEditing.toggle() }
+        withAnimation(.snappy(duration: 0.2)) { isEditing = editing }
     }
 
-    private func commitEdits() {
-        content.summary = content.summary.flatMap { $0.trimmed.isEmpty ? nil : $0.trimmed }
-        content.keyPoints = content.keyPoints.map(\.trimmed).filter { !$0.isEmpty }
-        for index in content.sections.indices {
-            content.sections[index].heading = content.sections[index].heading.trimmed
-            content.sections[index].paragraphs.removeAll { $0.text.trimmed.isEmpty }
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            save()
         }
-        // A picture's section stays even without text, so the picture does.
-        content.sections.removeAll { $0.paragraphs.isEmpty && $0.heading.isEmpty && $0.picture == nil }
-        let title = draftTitle.trimmed
-        if !title.isEmpty, title != note.title {
-            note.title = title
-            note.titleEdited = true
-        }
-        note.content = content
+    }
+
+    private func save() {
+        guard text != note.markdown else { return }
+        note.setMarkdown(text)
         center.save()
-        timeline = Timeline.sections(of: content)
     }
 
-    private func reloadContent() {
-        content = note.content ?? NoteContent()
-        timeline = Timeline.sections(of: content)
-    }
-
-    // MARK: Toolbar and export
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if isVideo {
-                Toggle(isOn: $showsVideo) {
-                    Label("Show Video", systemImage: "play.rectangle")
-                }
-                .help(showsVideo ? "Hide the video" : "Show the video")
-            }
-
-            Button(isEditing ? "Done" : "Edit", systemImage: isEditing ? "checkmark" : "pencil") {
-                toggleEditing()
-            }
-            .help(isEditing ? "Finish editing" : "Edit the note")
-
-            Menu {
-                Button("Copy as Markdown", systemImage: "doc.on.doc") { copy(NoteExporter.markdown(snapshot)) }
-                Button("Copy as Plain Text", systemImage: "doc.plaintext") { copy(NoteExporter.plainText(snapshot)) }
-                Divider()
-                Button("Export Markdown File…", systemImage: "square.and.arrow.down") { exportMarkdown() }
-                ShareLink("Share…", item: NoteExporter.markdown(snapshot))
-            } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
-            }
-            .help("Copy or export this note")
+    /// Saves anything pending now: the text and the title.
+    private func flush() {
+        saveTask?.cancel()
+        saveTask = nil
+        if isEditing {
+            save()
+            commitTitle()
         }
+    }
+
+    private func commitTitle() {
+        let title = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != note.displayTitle else { return }
+        note.title = title
+        note.titleEdited = true
+        note.updatedAt = .now
+        center.save()
+    }
+
+    private func toggleTask(at line: Int) {
+        text = MarkdownDocument.togglingTask(in: text, line: line)
+        blocks = MarkdownDocument.parse(text)
+        save()
+    }
+
+    /// ⌘E switches between reader and edit mode.
+    private var shortcuts: some View {
+        Button { setEditing(!isEditing) } label: { Color.clear.frame(width: 0, height: 0) }
+            .buttonStyle(.plain)
+            .keyboardShortcut("e", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: Copy and export
+
+    private func copyNote() {
+        copy(exportMarkdown)
+        withAnimation(.snappy(duration: 0.15)) { copied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.snappy(duration: 0.15)) { copied = false }
+        }
+    }
+
+    @ViewBuilder
+    private var moreItems: some View {
+        Button("Copy as Markdown", systemImage: "doc.on.doc") { copy(exportMarkdown) }
+        Button("Copy as Plain Text", systemImage: "doc.plaintext") { copy(exportPlainText) }
+        Button("Export Markdown File…", systemImage: "square.and.arrow.down") { saveMarkdownFile() }
+        ShareLink("Share…", item: exportMarkdown)
+        if note.editedMarkdown != nil {
+            Divider()
+            Button("Revert to Ovyl's Text", systemImage: "arrow.uturn.backward") {
+                note.editedMarkdown = nil
+                note.searchText = note.content?.plainText ?? ""
+                center.save()
+                load()
+            }
+        }
+        Divider()
+        NoteMenuItems(note: note, folders: folders)
     }
 
     private var snapshot: NoteExporter.Snapshot {
-        NoteExporter.Snapshot(title: note.displayTitle, date: note.createdAt, duration: note.duration, content: content)
+        NoteExporter.Snapshot(title: note.displayTitle, date: note.createdAt, duration: note.duration, content: note.content ?? NoteContent())
+    }
+
+    private var exportMarkdown: String {
+        guard note.editedMarkdown != nil else { return NoteExporter.markdown(snapshot) }
+        let body = NoteMarkdown.portable(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = note.content?.summary.map { "> \($0)\n\n" } ?? ""
+        return "# \(note.displayTitle)\n\n*\(NoteExporter.metadata(snapshot))*\n\n\(summary)\(body)\n"
+    }
+
+    private var exportPlainText: String {
+        guard note.editedMarkdown != nil else { return NoteExporter.plainText(snapshot) }
+        let body = NoteMarkdown.plainText(NoteMarkdown.portable(text))
+        let summary = note.content?.summary.map { "\($0)\n\n" } ?? ""
+        return "\(note.displayTitle)\n\(NoteExporter.metadata(snapshot))\n\n\(summary)\(body)\n"
     }
 
     private func copy(_ text: String) {
@@ -398,237 +293,19 @@ struct NoteDocumentView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    private func exportMarkdown() {
+    private func saveMarkdownFile() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = note.displayTitle
             .replacing(/[\/:\\?%*|"<>]/, with: "-")
             .trimmingCharacters(in: .whitespaces) + ".md"
-        let markdown = NoteExporter.markdown(snapshot)
+        let markdown = exportMarkdown
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try markdown.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             NSAlert(error: error).runModal()
-        }
-    }
-}
-
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-}
-
-private extension View {
-    func editableField() -> some View {
-        padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-    }
-}
-
-struct TimestampButton: View {
-    let seconds: TimeInterval
-    let action: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(TimeFormat.clock(seconds))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(isHovered ? Color.accentColor : Color.secondary)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .onHover { isHovered = $0 }
-        .help("Play from \(TimeFormat.clock(seconds))")
-    }
-}
-
-struct ScreenMomentCard: View {
-    let moment: ScreenMoment
-    let folder: URL
-    let play: () -> Void
-    @State private var isExpanded = false
-
-    private let collapsedLineCount = 10
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            if let name = moment.thumbnail, let image = ThumbnailCache.image(at: folder.appending(path: name)) {
-                Button(action: play) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 168)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(.separator)
-                        }
-                }
-                .buttonStyle(.plain)
-                .help("Play from \(TimeFormat.clock(moment.start))")
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Image(systemName: "text.viewfinder")
-                    Text("On screen")
-                    TimestampButton(seconds: moment.start, action: play)
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 2)
-
-                let lines = isExpanded ? moment.lines : Array(moment.lines.prefix(collapsedLineCount))
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(line == moment.title ? .system(size: 14.5, weight: .semibold) : .system(size: 13.5))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if moment.lines.count > collapsedLineCount {
-                    Button(isExpanded ? "Show less" : "Show all \(moment.lines.count) lines") {
-                        withAnimation(.snappy) { isExpanded.toggle() }
-                    }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(12)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.separator.opacity(0.6))
-        }
-    }
-}
-
-/// A short remark shown on screen: no frame grab, just the words.
-struct CommentaryRow: View {
-    let moment: ScreenMoment
-    let play: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color.accentColor.opacity(0.55))
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "text.bubble")
-                    Text("On screen")
-                    TimestampButton(seconds: moment.start, action: play)
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                Text(moment.lines.joined(separator: "\n"))
-                    .font(.system(size: 14.5).italic())
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// Where a song or other music played; it isn't transcribed.
-struct MusicRow: View {
-    let span: TimeSpan
-    let play: () -> Void
-
-    var body: some View {
-        Button(action: play) {
-            HStack(spacing: 8) {
-                Image(systemName: "music.note")
-                Text("Music")
-                    .fontWeight(.semibold)
-                Text(TimeFormat.range(span.start, span.end))
-                    .monospacedDigit()
-                Text("Not transcribed")
-                    .foregroundStyle(.tertiary)
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.quaternary.opacity(0.45), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .help("Play from \(TimeFormat.clock(span.start))")
-    }
-}
-
-/// A picture a note was made from, at a readable size.
-struct PictureView: View {
-    let picture: NotePicture
-    let folder: URL
-
-    var body: some View {
-        if let name = picture.thumbnail, let image = ThumbnailCache.image(at: folder.appending(path: name)) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(.separator)
-                }
-                .frame(maxWidth: .infinity, maxHeight: 520, alignment: .leading)
-                .help(picture.name)
-        }
-    }
-}
-
-@MainActor
-enum ThumbnailCache {
-    private static let cache = NSCache<NSURL, NSImage>()
-
-    static func image(at url: URL) -> NSImage? {
-        if let image = cache.object(forKey: url as NSURL) { return image }
-        guard let image = NSImage(contentsOf: url) else { return nil }
-        cache.setObject(image, forKey: url as NSURL)
-        return image
-    }
-}
-
-/// Lays out children left to right, wrapping onto new lines as needed.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 12
-    var lineSpacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, widest: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                x = 0
-                y += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-            x += size.width + spacing
-            widest = max(widest, x - spacing)
-            lineHeight = max(lineHeight, size.height)
-        }
-        return CGSize(width: min(widest, maxWidth), height: y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
         }
     }
 }

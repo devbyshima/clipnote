@@ -9,6 +9,8 @@ final class PlayerModel {
     private(set) var player: AVPlayer?
     private(set) var hasVideo = true
     private(set) var isUnavailable = false
+    /// Width over height of the picture as shown, once the video track loads.
+    private(set) var aspectRatio: CGFloat?
     @ObservationIgnored private var accessedURL: URL?
 
     func load(_ note: Note) {
@@ -29,6 +31,10 @@ final class PlayerModel {
         Task {
             let tracks = (try? await asset.loadTracks(withMediaType: .video)) ?? []
             hasVideo = !tracks.isEmpty
+            if let track = tracks.first, let loaded = try? await track.load(.naturalSize, .preferredTransform) {
+                let shown = loaded.0.applying(loaded.1)
+                if shown.width != 0, shown.height != 0 { aspectRatio = abs(shown.width / shown.height) }
+            }
         }
     }
 
@@ -36,6 +42,10 @@ final class PlayerModel {
         guard let player else { return }
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         player.play()
+    }
+
+    func pause() {
+        player?.pause()
     }
 
     func reload(_ note: Note) {
@@ -46,6 +56,9 @@ final class PlayerModel {
     func unload() {
         player?.pause()
         player = nil
+        aspectRatio = nil
+        hasVideo = true
+        isUnavailable = false
         release()
     }
 

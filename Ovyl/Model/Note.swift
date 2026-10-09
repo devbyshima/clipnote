@@ -35,6 +35,13 @@ final class Note {
     @Attribute(.externalStorage) var contentData: Data?
     /// Plain text of the whole note, for sidebar search.
     var searchText = ""
+    /// The folder the note is in, if any.
+    var folderID: UUID?
+    /// When the note was last edited or made again; nil until then.
+    var updatedAt: Date?
+    /// The note's text as Markdown once it has been edited. Nil while it's
+    /// still the text Ovyl wrote, which is made from `content`.
+    @Attribute(.externalStorage) var editedMarkdown: String?
 
     init(sourceName: String, sourceBookmark: Data?) {
         self.sourceName = sourceName
@@ -69,6 +76,19 @@ final class Note {
 
     var displayTitle: String {
         title.isEmpty ? Self.title(fromFileName: sourceName) : title
+    }
+
+    /// The note's text as Markdown: the edited text, or the text Ovyl wrote.
+    var markdown: String {
+        editedMarkdown ?? NoteMarkdown.body(of: content ?? NoteContent())
+    }
+
+    /// Keeps edited text, or goes back to Ovyl's text when it matches.
+    func setMarkdown(_ text: String) {
+        let generated = NoteMarkdown.body(of: content ?? NoteContent())
+        editedMarkdown = text == generated ? nil : text
+        updatedAt = .now
+        searchText = editedMarkdown.map(NoteMarkdown.plainText) ?? content?.plainText ?? ""
     }
 
     var thumbnailsFolder: URL { Self.thumbnailsRoot.appending(path: id.uuidString, directoryHint: .isDirectory) }
@@ -115,6 +135,14 @@ extension Note {
             urls.append(resolved.url)
         }
         return urls
+    }
+
+    /// The picture at `index`, if it can still be found. The caller must
+    /// balance `startAccessingSecurityScopedResource` on the returned URL.
+    func resolvePicture(at index: Int) -> URL? {
+        guard pictureBookmarks.indices.contains(index), let resolved = Self.resolve(pictureBookmarks[index]) else { return nil }
+        if let fresh = resolved.fresh { pictureBookmarks[index] = fresh }
+        return resolved.url
     }
 
     /// The bookmark's URL, and a fresh bookmark when the old one went stale.

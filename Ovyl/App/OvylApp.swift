@@ -11,20 +11,44 @@ struct OvylApp: App {
         Window("Ovyl", id: "main") {
             ContentView()
                 .environment(center)
-                .frame(minWidth: 860, minHeight: 540)
+                .frame(minWidth: 900, minHeight: 540)
         }
         .modelContainer(center.container)
-        .defaultSize(width: 1200, height: 800)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Import Video or Pictures…") { center.isImporterPresented = true }
-                    .keyboardShortcut("o")
-            }
-        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1320, height: 840)
+        .commands { OvylCommands(center: center) }
 
         Settings {
             SettingsView()
                 .environment(center)
+        }
+    }
+}
+
+struct OvylCommands: Commands {
+    let center: ProcessingCenter
+    @AppStorage("showSidebar") private var showSidebar = true
+    @AppStorage("showMedia") private var showMedia = true
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Note from Video or Pictures…") { center.isImporterPresented = true }
+                .keyboardShortcut("n")
+            Button("Open Video or Pictures…") { center.isImporterPresented = true }
+                .keyboardShortcut("o")
+            Divider()
+            Button("New Folder") {
+                showSidebar = true
+                center.createFolder()
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+        CommandGroup(replacing: .printItem) {}
+        CommandGroup(replacing: .sidebar) {
+            Button(showSidebar ? "Hide Sidebar" : "Show Sidebar") { showSidebar.toggle() }
+                .keyboardShortcut(".", modifiers: .command)
+            Button(showMedia ? "Hide Media" : "Show Media") { showMedia.toggle() }
+                .keyboardShortcut("p", modifiers: .command)
         }
     }
 }
