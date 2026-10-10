@@ -3,7 +3,7 @@ import SwiftUI
 
 // The pieces every empty state is made from: a clock that drives the motion,
 // easing curves, the colors, paper cards, yellow handwriting, the dashed
-// blue of something Ovyl is reading, small monospace counts, and a pointer.
+// blue of something Ovyl is reading, small counts, and a pointer.
 
 // MARK: - Clock
 
@@ -91,7 +91,6 @@ enum SceneColor {
     static let line = dynamic((0, 0, 0, 0.065), (255, 255, 255, 0.055))
     static let number = dynamic((0, 0, 0, 0.3), (255, 255, 255, 0.28))
     static let card = dynamic((255, 255, 255, 1), (40, 40, 42, 1))
-    static let cardBack = dynamic((243, 243, 244, 1), (33, 33, 35, 1))
     static let cardEdge = dynamic((0, 0, 0, 0.07), (255, 255, 255, 0.06))
     static let cardShadow = dynamic((0, 0, 0, 0.06), (0, 0, 0, 0.35))
     static let ink = dynamic((190, 140, 10, 1), (235, 200, 80, 1))
@@ -107,11 +106,15 @@ enum SceneColor {
 // MARK: - Materials
 
 extension View {
-    /// A paper card: a plain fill, a hairline edge and a soft shadow.
-    func paperCard(cornerRadius: CGFloat = 8, fill: Color = SceneColor.card, lift: CGFloat = 1) -> some View {
-        background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(fill))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(SceneColor.cardEdge, lineWidth: 0.5))
-            .shadow(color: SceneColor.cardShadow, radius: 8 * lift, y: 3 * lift)
+    /// A card in the notes' own look: white shading to a soft gray, a
+    /// hairline edge and a soft shadow, with generous corners.
+    func paperCard(cornerRadius: CGFloat = 16, lift: CGFloat = 1) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(LinearGradient(colors: [CardColor.top, CardColor.bottom], startPoint: .top, endPoint: .bottom))
+        )
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(CardColor.edge, lineWidth: 1))
+        .shadow(color: CardColor.shadow, radius: 9 * lift, y: 4 * lift)
     }
 }
 
@@ -127,7 +130,7 @@ struct Dashed<S: Shape>: View {
     }
 }
 
-/// A small monospace caption, such as "notes (0)".
+/// A small caption, such as "notes (0)".
 struct MonoLabel: View {
     let name: String
     var count: String = "(0)"
@@ -138,39 +141,80 @@ struct MonoLabel: View {
             Text(name).foregroundStyle(active ? SceneColor.highlightEdge : SceneColor.label)
             Text(count).foregroundStyle(SceneColor.label)
         }
-        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
     }
 }
 
-/// A note as a small card's contents: a colored symbol, a title and a
-/// detail line.
-struct NoteChip: View {
-    let symbol: String
-    let tint: Color
+/// A note as a portrait page: the Home note card itself, laid out at full
+/// size and scaled down, with a title, the start of its text fading out,
+/// and the day and dots along the foot. `written` writes the text in from
+/// the top, for a note being made.
+struct NotePage: View {
     let title: String
-    let detail: String
+    let text: String
+    let day: String
+    var width: CGFloat = 92
+    var written: Double = 1
+    var lift: CGFloat = 1
+
+    /// The full card it's drawn from, 5 wide by 6 tall like Home's.
+    static let base = CGSize(width: 300, height: 360)
+
+    var height: CGFloat { width * Self.base.height / Self.base.width }
 
     var body: some View {
-        HStack(spacing: 9) {
-            ZStack {
-                Circle().fill(tint.gradient)
-                Image(systemName: symbol)
-                    .font(.system(size: 7.5, weight: .bold))
-                    .foregroundStyle(.white)
+        let scale = width / Self.base.width
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(CardColor.title)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(text)
+                .font(.system(size: 13))
+                .lineSpacing(6.5)
+                .foregroundStyle(CardColor.body)
+                .padding(.top, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.4), .init(color: .clear, location: 1)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+                .mask(
+                    // The text writes in from the top.
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: max(0, min(1, written * 1.1 - 0.1))),
+                            .init(color: .clear, location: max(0.0001, min(1, written * 1.1))),
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+            HStack(spacing: 0) {
+                Text(day)
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .tracking(1.7)
+                    .foregroundStyle(CardColor.meta)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                MoreDots(color: CardColor.meta)
             }
-            .frame(width: 15, height: 15)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.ovylSecondary)
-            }
-            .lineLimit(1)
-            Spacer(minLength: 0)
+            .padding(.top, 12)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 25)
+        .padding(.top, 29)
+        .padding(.bottom, 21)
+        .frame(width: Self.base.width, height: Self.base.height, alignment: .topLeading)
+        .background(shape.fill(LinearGradient(colors: [CardColor.top, CardColor.bottom], startPoint: .top, endPoint: .bottom)))
+        .overlay(shape.strokeBorder(CardColor.edge, lineWidth: 1 / scale))
+        .scaleEffect(scale, anchor: .topLeading)
+        .frame(width: width, height: height, alignment: .topLeading)
+        .shadow(color: CardColor.shadow, radius: 8 * lift, y: 4 * lift)
     }
 }
 
@@ -208,13 +252,7 @@ struct Handwriting: View {
     var underline: Double?
 
     /// Caveat, a little heavier than regular, as a marker would write.
-    private var font: NSFont {
-        let descriptor = NSFontDescriptor(fontAttributes: [
-            .family: "Caveat",
-            .variation: [NSNumber(value: 0x7767_6874): NSNumber(value: 620)],
-        ])
-        return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size)
-    }
+    private var font: NSFont { .caveat(size, wght: 620) }
 
     var body: some View {
         let width = (text as NSString).size(withAttributes: [.font: font]).width

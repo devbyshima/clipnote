@@ -79,12 +79,17 @@ struct StoryMoment: View {
         let leaving = Ease.progress(time, from: Self.leave, over: Self.fadeOut)
         let dropping = moment.kind == .drop
         VStack(alignment: .leading, spacing: 10) {
-            card
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .frame(width: frame.width, alignment: .leading)
-                .paperCard()
-                .offset(y: dropping ? -30 * (1 - Ease.spring(Ease.progress(time, from: 0, over: 0.9))) : 0)
+            if moment.kind == .note {
+                // The note itself: a page, like the notes on Home.
+                FinishedNotePage(time: time)
+            } else {
+                card
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .frame(width: frame.width, alignment: .leading)
+                    .paperCard()
+                    .offset(y: dropping ? -30 * (1 - Ease.spring(Ease.progress(time, from: 0, over: 0.9))) : 0)
+            }
 
             Remark(moment.remark, time: time, start: writeStart)
         }
@@ -99,7 +104,7 @@ struct StoryMoment: View {
         case .listen: TranscriptCard(time: time)
         case .read: SlideCard(time: time)
         case .skip: SongCard(time: time)
-        case .note: FinishedNoteCard(time: time)
+        case .note: EmptyView()
         }
     }
 
@@ -127,13 +132,18 @@ struct VideoCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(LinearGradient(colors: [Color(white: 0.34), Color(white: 0.13)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    StockPhoto.lecture
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 46, height: 30)
+                        .overlay(Color.black.opacity(0.22))
                     Image(systemName: "play.fill")
                         .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .shadow(color: .black.opacity(0.35), radius: 2)
                 }
                 .frame(width: 46, height: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("lecture.mov")
                         .font(.system(size: 12.5, weight: .medium))
@@ -174,7 +184,7 @@ struct TranscriptCard: View {
                 ForEach(Self.lines, id: \.0) { stamp, text in
                     HStack(spacing: 7) {
                         Text(stamp)
-                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                             .foregroundStyle(Color.ovylSecondary)
                         Text(text)
                             .font(.system(size: 11.5))
@@ -287,42 +297,31 @@ struct SongCard: View {
     }
 }
 
-/// The finished note: its title, then its points, one after another, and
-/// a check once it's done.
-struct FinishedNoteCard: View {
+/// The finished note: a page whose points write themselves in, with a
+/// check once it's done.
+struct FinishedNotePage: View {
     let time: Double
-
-    private static let lines = ["Exam: chapters 3–5", "Office hours on Friday", "Redo the second chart"]
 
     var body: some View {
         let done = Ease.spring(Ease.progress(time, from: 1.9, over: 0.6))
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text("Lecture 4")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .mask(Sweep(progress: Ease.progress(time, from: 0.1, over: 0.4)))
-                Spacer(minLength: 0)
-                ZStack {
-                    Circle().fill(Color.green.gradient)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 7, weight: .heavy))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 14, height: 14)
-                .scaleEffect(max(0, done))
-                .opacity(min(1, done * 2))
+        NotePage(
+            title: "Lecture 4",
+            text: "Exam: chapters 3 to 5\n- Office hours on Friday\n- Redo the second chart\n\nThe first chart is fine as it is.",
+            day: "TODAY",
+            width: 96,
+            written: Ease.inOut(Ease.progress(time, from: 0.4, over: 1.4))
+        )
+        .overlay(alignment: .topTrailing) {
+            ZStack {
+                Circle().fill(Color.green.gradient)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 7, weight: .heavy))
+                    .foregroundStyle(.white)
             }
-            .padding(.bottom, 2)
-            ForEach(Array(Self.lines.enumerated()), id: \.offset) { index, line in
-                HStack(spacing: 6) {
-                    Circle().fill(Color.ovylSecondary).frame(width: 3, height: 3)
-                    Text(line)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ovylSecondary)
-                }
-                .lineLimit(1)
-                .mask(Sweep(progress: Ease.progress(time, from: 0.55 + Double(index) * 0.4, over: 0.45)))
-            }
+            .frame(width: 15, height: 15)
+            .scaleEffect(max(0, done))
+            .opacity(min(1, done * 2))
+            .offset(x: 5, y: -5)
         }
     }
 }
@@ -346,4 +345,15 @@ struct Waveform: View {
             }
         }
     }
+}
+
+/// Stock photos shipped with the app, for the video thumbnails in the empty
+/// states. The lecture is by Vitaly Gariev on Unsplash (Unsplash License).
+enum StockPhoto {
+    @MainActor static let lecture: Image = {
+        guard let url = Bundle.main.url(forResource: "lecture", withExtension: "jpg"), let image = NSImage(contentsOf: url) else {
+            return Image(systemName: "play.rectangle")
+        }
+        return Image(nsImage: image)
+    }()
 }

@@ -59,6 +59,9 @@ struct NotesListView: View {
                     .keyboardShortcut("f", modifiers: .command)
                     PillButton(symbol: "plus", help: "New note from a video, audio or pictures (⌘N)", action: onNew)
                 }
+                if query.isEmpty, !(notes.isEmpty && folders.isEmpty) {
+                    PillGroup { HomeView(hasFolders: folder == nil && !folders.isEmpty) }
+                }
                 AssistantToggle()
             }
             list
@@ -115,9 +118,9 @@ struct NotesListView: View {
 
     @ViewBuilder
     private var list: some View {
-        if notes.isEmpty, folder == nil {
+        if notes.isEmpty, folder == nil, folders.isEmpty {
             HomeEmptyState(onNew: onNew)
-        } else if notes.isEmpty {
+        } else if notes.isEmpty, folder != nil {
             FolderEmptyState(onNew: onNew)
         } else if !query.isEmpty, results.isEmpty, searched == query {
             SearchEmptyState(query: query)
@@ -142,26 +145,14 @@ struct NotesListView: View {
             }
             .scrollIndicators(.visible)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    ForEach(DateGroup.groups(of: results), id: \.title) { group in
-                        HStack(spacing: 6) {
-                            Text(group.title)
-                            Text("\(group.notes.count)")
-                        }
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.ovylSecondary)
-                        .padding(.horizontal, 30)
-                        .padding(.top, 18)
-                        .padding(.bottom, 8)
-                        ForEach(group.notes) { note in
-                            NoteListRow(note: note, folderName: folderName(of: note), folders: folders)
-                        }
-                    }
-                }
-                .padding(.bottom, 24)
-            }
-            .scrollIndicators(.visible)
+            // Home shows the folders and the notes outside them; a folder, its notes.
+            CardGrid(
+                folders: folder == nil ? folders : [],
+                notes: folder == nil ? notes.filter { $0.folderID == nil } : notes,
+                allNotes: notes,
+                allFolders: folders,
+                scope: folder?.id.uuidString ?? "home"
+            )
         }
     }
 
@@ -171,39 +162,8 @@ struct NotesListView: View {
     }
 }
 
-/// Notes grouped as Today, Yesterday, Last week, Last month and Earlier.
-struct DateGroup {
-    let title: String
-    let notes: [Note]
-
-    static func groups(of notes: [Note], now: Date = .now, calendar: Calendar = .current) -> [DateGroup] {
-        let today = calendar.startOfDay(for: now)
-        func title(for date: Date) -> String {
-            let day = calendar.startOfDay(for: date)
-            let days = calendar.dateComponents([.day], from: day, to: today).day ?? 0
-            switch days {
-            case ..<1: return "Today"
-            case 1: return "Yesterday"
-            case 2...7: return "Last week"
-            case 8...31: return "Last month"
-            default: return "Earlier"
-            }
-        }
-        var groups: [DateGroup] = []
-        for note in notes {
-            let name = title(for: note.createdAt)
-            if let last = groups.last, last.title == name {
-                groups[groups.count - 1] = DateGroup(title: name, notes: last.notes + [note])
-            } else {
-                groups.append(DateGroup(title: name, notes: [note]))
-            }
-        }
-        return groups
-    }
-}
-
-/// One note in the list: a thumbnail, the title, when and how long, and a
-/// menu. The note last opened is highlighted.
+/// One note in the list: the note's card in miniature, the title, when and
+/// how long, and a menu. The note last opened is highlighted.
 struct NoteListRow: View {
     @Environment(Navigator.self) private var navigator
     let note: Note
@@ -211,8 +171,9 @@ struct NoteListRow: View {
     let folders: [Folder]
     /// Where a search found the note, shown under its title.
     var match: NoteMatch?
+    /// Whether the row drags itself; the grid's list does it instead.
+    var isDraggable = true
     @State private var isHovered = false
-    @State private var thumbnail: URL?
 
     private var isLastOpened: Bool {
         navigator.back.last?.noteID == note.id || navigator.forward.last?.noteID == note.id
@@ -220,13 +181,8 @@ struct NoteListRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            thumbnailView
-                .frame(width: 46, height: 46)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.ovylBorder, lineWidth: 0.5)
-                }
+            NoteThumbnail(note: note)
+                .frame(width: ListThumbnail.column)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(note.displayTitle)
@@ -263,33 +219,11 @@ struct NoteListRow: View {
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { navigator.go(.note(note.id)) }
-        .draggable(NoteReference(id: note.id)) {
-            Text(note.displayTitle)
-                .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.ovylSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
+        .modifier(NoteDrag(id: note.id, title: note.displayTitle, isOn: isDraggable))
         .contextMenu {
             Button("Open", systemImage: "doc.text") { navigator.go(.note(note.id)) }
             Divider()
             NoteMenuItems(note: note, folders: folders)
-        }
-        .task(id: note.statusRaw) { thumbnail = Self.firstThumbnail(of: note) }
-    }
-
-    @ViewBuilder
-    private var thumbnailView: some View {
-        if let thumbnail {
-            Thumbnail(url: thumbnail).scaledToFill()
-        } else {
-            Rectangle()
-                .fill(Color.ovylFill)
-                .overlay {
-                    Image(systemName: note.mediaKind.symbol)
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.ovylSecondary)
-                }
         }
     }
 
@@ -345,15 +279,6 @@ struct NoteListRow: View {
         case ..<(86_400 * 365): return "\(Int(seconds / (86_400 * 7)))w"
         default: return "\(Int(seconds / (86_400 * 365)))y"
         }
-    }
-
-    /// The first frame grab or picture saved for the note, if any.
-    static func firstThumbnail(of note: Note) -> URL? {
-        let files = (try? FileManager.default.contentsOfDirectory(at: note.thumbnailsFolder, includingPropertiesForKeys: nil)) ?? []
-        return files
-            .filter { ["jpg", "jpeg", "png", "heic"].contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            .first
     }
 }
 
@@ -415,5 +340,26 @@ struct MatchSnippet: View {
         }
         flush()
         return result
+    }
+}
+
+/// A note row that can be dragged onto a folder, when the row drags itself.
+struct NoteDrag: ViewModifier {
+    let id: UUID
+    let title: String
+    let isOn: Bool
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content.draggable(NoteReference(id: id)) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.ovylSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        } else {
+            content
+        }
     }
 }

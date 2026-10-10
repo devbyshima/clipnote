@@ -93,7 +93,7 @@ struct GridBackdrop: View {
                 for column in 0..<GridLayout.columns {
                     let mark = marks.label(column: column, row: row)
                     let label = Text(mark.text)
-                        .font(.system(size: 10.5, weight: mark.isBold ? .bold : .medium, design: .monospaced))
+                        .font(.system(size: 10.5, weight: mark.isBold ? .bold : .medium).monospacedDigit())
                         .foregroundStyle(mark.isBold ? Color.primary.opacity(0.75) : SceneColor.number)
                     let point = CGPoint(x: layout.origin.x + CGFloat(column) * layout.cell.width + 9, y: layout.origin.y + CGFloat(row) * layout.cell.height + 8)
                     context.draw(label, at: point, anchor: .topLeading)

@@ -80,6 +80,16 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.fulltimestudio.ovyl.note</string>
 		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Ovyl Folder</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.fulltimestudio.ovyl.folder</string>
+		</dict>
 	</array>
 </dict>
 </plist>

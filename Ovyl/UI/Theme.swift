@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 
 // Ovyl's look: light grays with white controls, a dotted canvas behind media,
-// blue for what's active, and the system font. Each color has a dark variant.
+// blue for what's active, and two typefaces: the system font, and Caveat for
+// handwriting; a note can also be read in New York. Each color has a dark
+// variant.
 
 extension NSColor {
     /// A color with a light and a dark value, each as sRGB 0–255 and alpha.
@@ -59,14 +61,14 @@ extension Color {
 }
 
 extension Font {
-    /// The system font, or New York when `serif`.
+    /// The system font, or New York when `serif`, for notes.
     static func ovyl(_ size: CGFloat, _ weight: Font.Weight = .regular, serif: Bool = false) -> Font {
         .system(size: size, weight: weight, design: serif ? .serif : .default)
     }
 }
 
 enum OvylFonts {
-    /// Registers the bundled Caveat, the handwriting in the empty states. Call once at launch.
+    /// Registers the bundled Caveat, the handwriting. Call once at launch.
     static func register() {
         guard let url = Bundle.main.url(forResource: "Caveat", withExtension: "ttf") else { return }
         CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
@@ -74,11 +76,20 @@ enum OvylFonts {
 }
 
 extension NSFont {
-    /// The system font, or New York when `serif`.
+    /// The system font, or New York when `serif`, for notes.
     static func ovyl(_ size: CGFloat, weight: NSFont.Weight = .regular, serif: Bool = false) -> NSFont {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
         guard serif, let descriptor = font.fontDescriptor.withDesign(.serif) else { return font }
         return NSFont(descriptor: descriptor, size: size) ?? font
+    }
+
+    /// Caveat, the handwriting, at a weight from 400 to 700.
+    static func caveat(_ size: CGFloat, wght: CGFloat = 460) -> NSFont {
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: "Caveat",
+            .variation: [NSNumber(value: 0x7767_6874): NSNumber(value: Double(wght))],
+        ])
+        return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size)
     }
 }
 
@@ -373,5 +384,49 @@ struct PaneToolbar<Title: View, Trailing: View>: View {
         .padding(.trailing, 12)
         .frame(height: MainWindowStyler.barHeight)
         .background(WindowDragHandle())
+    }
+}
+
+// MARK: - Hex colors
+
+/// A color written as "#RRGGBB", taken apart and mixed.
+nonisolated struct HexColor: Equatable, Sendable {
+    let red: Double
+    let green: Double
+    let blue: Double
+
+    init(_ hex: String) {
+        let digits = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        let value = UInt32(digits, radix: 16) ?? 0x0A84FF
+        red = Double((value >> 16) & 0xFF) / 255
+        green = Double((value >> 8) & 0xFF) / 255
+        blue = Double(value & 0xFF) / 255
+    }
+
+    init(red: Double, green: Double, blue: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    /// How bright it looks, from 0 to 1.
+    var luminance: Double { 0.2126 * red + 0.7152 * green + 0.0722 * blue }
+
+    /// Light enough that text on it should be dark.
+    var isLight: Bool { luminance > 0.68 }
+
+    /// Mixed toward white by `amount`, or toward black when negative.
+    func mixed(_ amount: Double) -> HexColor {
+        let target = amount >= 0 ? 1.0 : 0.0
+        let t = abs(amount)
+        return HexColor(red: red + (target - red) * t, green: green + (target - green) * t, blue: blue + (target - blue) * t)
+    }
+
+    var color: Color { Color(.sRGB, red: red, green: green, blue: blue) }
+}
+
+extension Color {
+    init(hex: String) {
+        self = HexColor(hex).color
     }
 }

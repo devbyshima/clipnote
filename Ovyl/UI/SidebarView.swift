@@ -16,19 +16,7 @@ struct NoteReference: Codable, Transferable {
 }
 
 extension Folder {
-    var color: Color {
-        switch colorName {
-        case "orange": .orange
-        case "purple": .purple
-        case "green": .green
-        case "pink": .pink
-        case "yellow": .yellow
-        case "teal": .teal
-        case "red": .red
-        case "gray": .gray
-        default: .blue
-        }
-    }
+    var color: Color { Color(hex: hex) }
 }
 
 /// The left sidebar: Home and New, then the folders, each with its count.

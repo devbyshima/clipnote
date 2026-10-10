@@ -410,7 +410,7 @@ struct MarkdownHighlighter {
 
     private func codeAttributes(color: NSColor) -> [NSAttributedString.Key: Any] {
         [
-            .font: NSFont.monospacedSystemFont(ofSize: style.size * 0.85, weight: .regular),
+            .font: NSFont.systemFont(ofSize: style.size * 0.9, weight: .medium),
             .foregroundColor: color,
             .backgroundColor: NSColor.ovylCodeBG,
         ]

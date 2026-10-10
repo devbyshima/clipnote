@@ -8,20 +8,21 @@ struct SearchEmptyState: View {
     let query: String
 
     private struct Entry {
-        let symbol: String
-        let tint: Color
         let title: String
-        let detail: String
+        let text: String
+        let day: String
         let remark: String
     }
 
     private static let entries = [
-        Entry(symbol: "waveform", tint: .purple, title: "Team sync", detail: "18:42 · 4 slides", remark: "not here"),
-        Entry(symbol: "checkmark", tint: .green, title: "Lecture 4", detail: "52:10 · 12 slides", remark: "nope"),
-        Entry(symbol: "play.fill", tint: .orange, title: "Pasta, three ways", detail: "8:05", remark: "no match"),
-        Entry(symbol: "sparkles", tint: .pink, title: "Product demo", detail: "31:27 · 6 slides", remark: "not this one"),
-        Entry(symbol: "photo", tint: .teal, title: "Whiteboard", detail: "3 pictures", remark: "nothing"),
+        Entry(title: "Team Sync", text: "Budget: Priya owns it from now on.\nLaunch moves to March 14.\n\nNext sync on Friday.", day: "TODAY", remark: "not here"),
+        Entry(title: "Lecture 4", text: "Chapters 3 to 5 are on the exam.\nOffice hours move to Friday.\n\nRedo the second chart.", day: "YESTERDAY", remark: "nope"),
+        Entry(title: "Pasta, Three Ways", text: "Garlic, chili and olive oil.\nSave a cup of the pasta water.\n\nMore garlic next time.", day: "MON, 6 OCT", remark: "no match"),
+        Entry(title: "Product Demo", text: "The best part is at 12:40.\nShip the mobile beta first.\n\nQuestions about pricing.", day: "FRI, 3 OCT", remark: "not this one"),
+        Entry(title: "Whiteboard", text: "Sprint goals\nFix the login timeout.\nDark mode to beta testers.\n\nDemo on Thursday at 3.", day: "WED, 1 OCT", remark: "nothing"),
     ]
+
+    private static let page: CGFloat = 92
 
     private static let tour = Tour(count: entries.count, hold: 1.5, glide: 0.75, back: 1.9)
     private static let lens: CGFloat = 70
@@ -38,7 +39,7 @@ struct SearchEmptyState: View {
         EmptyCanvas(marks: .days, still: 1.4) { grid, t, _ in
             let frames = GridLayout.ring.map { grid.cardFrame(column: $0.0, row: $0.1) }
             let local = Ease.loop(t, lap: Self.tour.lap, offset: 0.7)
-            let stops = frames.map { CGPoint(x: $0.minX + 42, y: $0.minY + 22) }
+            let stops = frames.map { CGPoint(x: $0.minX + Self.page / 2, y: $0.minY + 30) }
             let glass = Self.tour.position(at: local, stops: stops, middle: grid.size.height / 2)
             let kept = Self.tour.kept(at: local)
 
@@ -84,14 +85,14 @@ struct SearchEmptyState: View {
             ForEach(Array(Self.entries.enumerated()), id: \.offset) { index, entry in
                 let frame = frames[index]
                 let checked = Ease.out(Ease.progress(local, from: Self.tour.arrival(index) + Self.tour.hold - 0.3, over: 0.4)) * kept
-                VStack(alignment: .leading, spacing: 10) {
-                    NoteChip(symbol: entry.symbol, tint: entry.tint, title: entry.title, detail: entry.detail)
-                        .frame(width: frame.width)
-                        .paperCard()
+                // The remark beside the page, at its foot, so it stays in the cell.
+                HStack(alignment: .bottom, spacing: 4) {
+                    NotePage(title: entry.title, text: entry.text, day: entry.day, width: Self.page)
                         .opacity(1 - 0.45 * checked)
                     if remarks {
                         Remark(entry.remark, time: local, start: Self.tour.arrival(index) + Self.tour.hold - 0.45)
                             .opacity(kept)
+                            .padding(.bottom, 2)
                     }
                 }
                 .offset(x: frame.minX, y: frame.minY)

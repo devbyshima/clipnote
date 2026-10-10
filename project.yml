@@ -84,6 +84,9 @@ targets:
           - UTTypeIdentifier: com.fulltimestudio.ovyl.note
             UTTypeDescription: Ovyl Note
             UTTypeConformsTo: [public.data]
+          - UTTypeIdentifier: com.fulltimestudio.ovyl.folder
+            UTTypeDescription: Ovyl Folder
+            UTTypeConformsTo: [public.data]
         CFBundleDocumentTypes:
           - CFBundleTypeName: Video
             CFBundleTypeRole: Viewer

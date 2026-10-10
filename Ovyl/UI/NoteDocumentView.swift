@@ -162,7 +162,7 @@ struct NoteDocumentView: View {
     private func segment(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: isOn ? .semibold : .regular, design: title == "Serif" ? .serif : .default))
+                .font(.ovyl(13, isOn ? .semibold : .regular, serif: title == "Serif"))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 .background(Capsule().fill(isOn ? Color.ovylFill : .clear))

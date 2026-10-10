@@ -114,7 +114,7 @@ enum MarkdownInline {
             let strong = intent.contains(.stronglyEmphasized)
             var font: Font
             if intent.contains(.code) {
-                font = .system(size: size * 0.875, weight: strong ? .bold : .regular, design: .monospaced)
+                font = .system(size: size * 0.9, weight: strong ? .bold : .medium)
             } else {
                 font = .ovyl(size, strong ? .bold : weight, serif: serif)
                 if intent.contains(.emphasized) { font = font.italic() }
@@ -363,7 +363,7 @@ struct CodeBlockView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Text(code.isEmpty ? " " : code)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 13, weight: .medium))
                 .lineSpacing(3)
                 .fixedSize()
                 .padding(.horizontal, 16)

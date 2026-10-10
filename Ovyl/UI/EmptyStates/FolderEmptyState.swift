@@ -31,25 +31,24 @@ struct FolderEmptyState: View {
         EmptyCanvas(marks: .days, still: 2.2) { grid, t, target in
             let round = Round(local: Ease.loop(t, lap: Self.lap, offset: 0.3))
             let home = grid.cardFrame(column: Self.cell.column, row: Self.cell.row)
-            let start = CGPoint(x: home.midX, y: home.midY)
-            let spot = target.map { CGPoint(x: $0.midX, y: $0.minY + 34) } ?? start
+            let page = NotePage(title: "Team Sync", text: "Budget: Priya owns it from now on.\nLaunch moves to March 14.\n\nNext sync on Friday.", day: "TODAY", width: 92)
+            let start = CGPoint(x: home.minX + page.width / 2, y: home.minY + page.height / 2)
+            let spot = target.map { CGPoint(x: $0.midX, y: $0.minY + 26) } ?? start
             let carry = round.carry
             let arc = CGFloat(sin(carry * .pi)) * 60
             let center = CGPoint(
                 x: start.x + (spot.x - start.x) * carry,
                 y: start.y + (spot.y - start.y) * carry - arc + 6 * round.sink
             )
-            let scale = (1 + 0.04 * round.grab) * (1 - 0.58 * carry) * (1 - 0.3 * round.sink)
-            let grip = CGPoint(x: center.x + home.width * 0.32 * scale, y: center.y + 4)
+            let scale = (1 + 0.04 * round.grab) * (1 - 0.5 * carry) * (1 - 0.3 * round.sink)
+            let grip = CGPoint(x: center.x + page.width * 0.3 * scale, y: center.y - page.height * 0.12 * scale)
 
             ZStack(alignment: .topLeading) {
                 Remark("drag it in", time: round.local, start: 0.2)
                     .opacity(round.kept)
-                    .offset(x: home.minX, y: home.maxY + 10)
+                    .offset(x: home.minX + page.width + 4, y: home.minY + page.height - 26)
 
-                NoteChip(symbol: "waveform", tint: .purple, title: "Team sync", detail: "18:42 · 4 slides")
-                    .frame(width: home.width)
-                    .paperCard(lift: 1 + 1.5 * round.grab * (1 - carry))
+                NotePage(title: page.title, text: page.text, day: page.day, width: page.width, lift: 1 + 1.5 * round.grab * (1 - carry))
                     .scaleEffect(scale)
                     .rotationEffect(.degrees(4 * round.grab * sin(carry * .pi)))
                     .position(center)
@@ -82,8 +81,9 @@ struct FolderEmptyState: View {
     }
 }
 
-/// A paper folder: a back with a tab, a note peeking out when it holds one,
-/// and a front that tips open and carries the count. Blue while something
+/// The folder in the cards' own look: a colored back with its tab, a white
+/// sheet standing in it once a note is in, and the front with the name and
+/// count, which tips forward to take the note. Blue and dashed while a note
 /// is dragged over it.
 struct FolderGlyph: View {
     let target: Double
@@ -92,72 +92,60 @@ struct FolderGlyph: View {
     let count: Int
     let tick: Double
 
+    private static let size = CGSize(width: 170, height: 102)
+    private let tint = HexColor("#AF52DE")
+
     var body: some View {
-        ZStack(alignment: .top) {
-            FolderBack()
-                .fill(SceneColor.cardBack)
-                .overlay(FolderBack().stroke(SceneColor.cardEdge, lineWidth: 0.5))
-                .overlay(Dashed(shape: FolderBack()).opacity(target))
-                .shadow(color: SceneColor.cardShadow, radius: 8, y: 3)
-                .frame(width: 150, height: 104)
+        let w = Self.size.width
+        let h = Self.size.height
+        let front = (h * FolderArtwork.front).rounded()
+        let radius = (h * 0.15).rounded()
+        ZStack(alignment: .topLeading) {
+            FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius)
+                .fill(LinearGradient(colors: [tint.mixed(0.26).color, tint.mixed(0.17).color], startPoint: .top, endPoint: .bottom))
+                .frame(width: w, height: front + radius)
 
-            // The note inside, its top showing above the front.
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach([0.6, 0.9, 0.75], id: \.self) { width in
-                    Capsule()
-                        .fill(SceneColor.sketch)
-                        .frame(width: 44 * width, height: 3)
+            PaperSheets(count: 1, width: w, height: h, isRaised: filled > 0.5)
+                .offset(y: h * 0.12 * (1 - filled))
+                .opacity(filled)
+
+            LinearGradient(colors: [tint.mixed(0.17).color.opacity(0), tint.mixed(0.17).color], startPoint: .top, endPoint: .bottom)
+                .frame(width: w, height: h * 0.13)
+                .offset(y: front - h * 0.13)
+
+            ZStack(alignment: .topLeading) {
+                UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
+                    .fill(LinearGradient(colors: [tint.color, tint.mixed(-0.025).color], startPoint: .top, endPoint: .bottom))
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Notes")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("\(count)")
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .tracking(1)
+                            .opacity(0.85)
+                            .scaleEffect(1 + 0.3 * tick, anchor: .leading)
+                    }
+                    Spacer(minLength: 4)
+                    MoreDots(color: .white, scale: 0.6)
+                        .frame(height: 16)
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.top, 9)
             }
-            .padding(9)
-            .frame(width: 62, height: 60, alignment: .topLeading)
-            .paperCard(cornerRadius: 6, lift: 0.5)
-            .offset(y: 20 + 12 * (1 - filled))
-            .opacity(filled)
-
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(SceneColor.card)
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(SceneColor.cardEdge, lineWidth: 0.5))
-                MonoLabel(name: "notes", count: "(\(count))", active: target > 0.5 || count > 0)
-                    .scaleEffect(1 + 0.1 * tick)
-            }
-            .frame(width: 158, height: 70)
-            .shadow(color: SceneColor.cardShadow, radius: 6, y: 2)
-            .rotation3DEffect(.degrees(-28 * open), axis: (x: 1, y: 0, z: 0), anchor: .bottom, perspective: 0.5)
-            .offset(y: 38)
+            .frame(width: w, height: h - front)
+            .rotation3DEffect(.degrees(-24 * open), axis: (x: 1, y: 0, z: 0), anchor: .bottom, perspective: 0.5)
+            .offset(y: front)
         }
-        .frame(width: 158, height: 110, alignment: .top)
-    }
-}
-
-/// The back of a folder: a panel with a tab on its top left.
-struct FolderBack: InsettableShape {
-    static let tab = CGSize(width: 54, height: 12)
-    var inset: CGFloat = 0
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: inset, dy: inset)
-        let radius: CGFloat = 9
-        let tabWidth = Self.tab.width
-        let top = r.minY + Self.tab.height
-        var path = Path()
-        path.move(to: CGPoint(x: r.minX, y: r.maxY - radius))
-        path.addLine(to: CGPoint(x: r.minX, y: r.minY + 6))
-        path.addQuadCurve(to: CGPoint(x: r.minX + 6, y: r.minY), control: CGPoint(x: r.minX, y: r.minY))
-        path.addLine(to: CGPoint(x: r.minX + tabWidth - 10, y: r.minY))
-        path.addCurve(to: CGPoint(x: r.minX + tabWidth + 6, y: top), control1: CGPoint(x: r.minX + tabWidth - 2, y: r.minY), control2: CGPoint(x: r.minX + tabWidth - 2, y: top))
-        path.addLine(to: CGPoint(x: r.maxX - radius, y: top))
-        path.addQuadCurve(to: CGPoint(x: r.maxX, y: top + radius), control: CGPoint(x: r.maxX, y: top))
-        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY - radius))
-        path.addQuadCurve(to: CGPoint(x: r.maxX - radius, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.minX + radius, y: r.maxY))
-        path.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - radius), control: CGPoint(x: r.minX, y: r.maxY))
-        path.closeSubpath()
-        return path
-    }
-
-    func inset(by amount: CGFloat) -> FolderBack {
-        FolderBack(inset: inset + amount)
+        .frame(width: w, height: h, alignment: .topLeading)
+        .overlay(
+            RoundedRectangle(cornerRadius: radius + 4, style: .continuous)
+                .stroke(SceneColor.highlightEdge, style: StrokeStyle(lineWidth: 1.2, dash: [2.6, 2]))
+                .padding(-6)
+                .opacity(target)
+        )
+        .shadow(color: tint.color.opacity(0.32), radius: 14, y: 8)
+        .scaleEffect(1 + 0.03 * target)
     }
 }
