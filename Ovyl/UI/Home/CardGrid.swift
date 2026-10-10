@@ -818,7 +818,7 @@ enum CardColor {
 // MARK: - Folder card
 
 /// A folder as a colored card: the back with its tab, the notes inside
-/// showing as paper sheets, and the front with the name, the count and a
+/// showing as paper sheets, and the front with the name in its middle and a
 /// menu. Notes dropped on it move into it.
 struct FolderCard: View {
     @Environment(ProcessingCenter.self) private var center
@@ -846,34 +846,30 @@ struct FolderCard: View {
             ZStack(alignment: .topLeading) {
                 FolderArtwork(tint: tint, count: count, isRaised: isHovered || isTargeted)
 
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        FolderName(name: folder.name, naming: naming, font: .system(size: 25 * scale, weight: .bold))
-                        HStack(spacing: 6 * scale) {
-                            Text("\(count)")
-                                .font(.system(size: 15 * scale, weight: .medium).monospacedDigit())
-                                .tracking(1.5 * scale)
-                            if folder.isPinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 11 * scale, weight: .semibold))
-                                    .help("Pinned to the sidebar")
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-                        }
-                        .opacity(0.82)
+                // The name sits in the middle of the front, as wide as the
+                // dots leave it, and shrinks to fit rather than cut off.
+                HStack(alignment: .center, spacing: 8 * scale) {
+                    FolderName(name: folder.name, naming: naming, font: .system(size: 25 * scale, weight: .bold), minimumScale: 0.6)
+                    if folder.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 12 * scale, weight: .semibold))
+                            .opacity(0.82)
+                            .help("Pinned to the sidebar")
+                            .transition(.scale.combined(with: .opacity))
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 8 * scale)
                     Button(action: more) {
                         MoreDots(color: text, scale: scale)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .help("Rename, color or delete")
+                    .help("Rename, color, pin or delete")
                     .anchorPreference(key: FolderDotsAnchor.self, value: .bounds) { [folder.id: $0] }
                 }
                 .foregroundStyle(text)
                 .padding(.horizontal, 25 * scale)
-                .padding(.top, front + (h - front) * 0.16)
+                .frame(height: h - front)
+                .offset(y: front)
             }
         }
         .frame(height: height)
@@ -1358,6 +1354,8 @@ struct FolderName: View {
     let name: String
     let naming: FolderNaming
     let font: Font
+    /// How far the name may shrink to fit, rather than be cut off.
+    var minimumScale: CGFloat = 1
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -1384,6 +1382,8 @@ struct FolderName: View {
             Text(name)
                 .font(font)
                 .lineLimit(1)
+                .minimumScaleFactor(minimumScale)
+                .allowsTightening(true)
         }
     }
 }
