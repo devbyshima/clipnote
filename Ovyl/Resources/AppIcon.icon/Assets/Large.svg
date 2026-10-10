@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="13.482" y1="18.207" x2="25.658" y2="27.893"><stop offset="0" stop-color="#47474C" stop-opacity="1"/><stop offset="0.35" stop-color="#232325" stop-opacity="1"/><stop offset="0.75" stop-color="#121213" stop-opacity="1"/><stop offset="1" stop-color="#0A0A0B" stop-opacity="1"/></linearGradient>
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="13.482" y1="18.207" x2="25.658" y2="27.893"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.5"/><stop offset="0.14" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.72" stop-color="#FFB443" stop-opacity="0"/><stop offset="1" stop-color="#FFB443" stop-opacity="0.8"/></linearGradient>
+    <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="13.482" y1="18.207" x2="25.658" y2="27.893"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.0"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.0"/></linearGradient>
+    <clipPath id="inside"><path d="M33.95,0.97C30.53,0.97 24.25,5.11 16.6,13.43C6.69,24.12 0.91,35.51 0.91,40.76C0.91,43.08 1.92,44.19 3.65,44.19C4.72,44.19 5.79,43.83 6.87,43.28C10.94,41.31 16.07,36.75 21.75,30.34C28.64,22.55 33.51,14.95 35.76,8.62C36.37,6.89 36.69,5.39 36.69,4.21C36.69,1.95 35.75,0.88 33.84,0.97L33.95,0.97Z"/></clipPath>
+  </defs>
+  <g transform="matrix(16.8 0 0 16.8 84.80 79.98)">
+    <path d="M33.95,0.97C30.53,0.97 24.25,5.11 16.6,13.43C6.69,24.12 0.91,35.51 0.91,40.76C0.91,43.08 1.92,44.19 3.65,44.19C4.72,44.19 5.79,43.83 6.87,43.28C10.94,41.31 16.07,36.75 21.75,30.34C28.64,22.55 33.51,14.95 35.76,8.62C36.37,6.89 36.69,5.39 36.69,4.21C36.69,1.95 35.75,0.88 33.84,0.97L33.95,0.97Z" fill="url(#body)"/>
+    <path d="M33.95,0.97C30.53,0.97 24.25,5.11 16.6,13.43C6.69,24.12 0.91,35.51 0.91,40.76C0.91,43.08 1.92,44.19 3.65,44.19C4.72,44.19 5.79,43.83 6.87,43.28C10.94,41.31 16.07,36.75 21.75,30.34C28.64,22.55 33.51,14.95 35.76,8.62C36.37,6.89 36.69,5.39 36.69,4.21C36.69,1.95 35.75,0.88 33.84,0.97L33.95,0.97Z" fill="url(#sheen)"/>
+    <path d="M33.95,0.97C30.53,0.97 24.25,5.11 16.6,13.43C6.69,24.12 0.91,35.51 0.91,40.76C0.91,43.08 1.92,44.19 3.65,44.19C4.72,44.19 5.79,43.83 6.87,43.28C10.94,41.31 16.07,36.75 21.75,30.34C28.64,22.55 33.51,14.95 35.76,8.62C36.37,6.89 36.69,5.39 36.69,4.21C36.69,1.95 35.75,0.88 33.84,0.97L33.95,0.97Z" fill="none" stroke="url(#rim)" stroke-width="1.3" clip-path="url(#inside)"/>
+  </g>
+</svg>

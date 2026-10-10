@@ -15,8 +15,10 @@ Notes are made on the Mac. The only network use is the assistant, when it's set 
 ## The window
 
 - **Left:** Home (every note), New (make a note from a video, audio or pictures), and folders, each with its count. Drag notes onto a folder to file them.
-- **Middle:** Home as cards: the folders as colored folder cards with a sheet showing for each note inside, and the notes outside them as white cards with their title, the start of their text and the day. Cards fill columns as they fit; a note with text stands twice as tall. A folder's dots bring up a pill to rename, color or delete it; its color button opens a color flower (twelve bright colors around six pastels and white). Drop notes on a folder card to file them. A folder shows its notes the same way. The view menu switches between the messy grid, an even grid and a list (with the cards as thumbnails), sorts by date made, date edited or title either way, or by hand: drag cards or rows into any order (each page keeps its own), and drop a note on a folder to file it. It can put folders first and hide note text; the slider at the bottom sizes the cards, smallest at first. Or the open note. A note opens in reader mode with just its title and text, with a Sans or Serif choice and a text size at the bottom. Edit (⌘E) edits its Markdown, showing the syntax only on the line being edited; selecting text brings up a formatting bar, and ⌘B, ⌘I and ⌘K work. Copy copies the note as Markdown. Timestamps in the note are links that play the video from that moment.
-- **Right:** the note's video on a dotted canvas, with Frames (F), Info (I) and Delete (D) under it. Frames moves the frames grabbed from on-screen text into the middle as a grid; Info moves the video into the middle and shows its details on the right. Back and forward (⌘[ and ⌘]) return to the note. The note's Info button shows its details and summary on the right instead.
+- **Middle:** Home as cards: the folders as colored folder cards with a sheet showing for each note inside, and the notes outside them as cards with their title, the start of their text and the day. Cards fill columns as they fit; a note with text stands twice as tall. A folder's dots bring up a pill to rename, color or delete it; its color button opens a color flower (twelve bright colors around six pastels and white). Drop notes on a folder card to file them. A folder shows its notes the same way. The view menu switches between the messy grid, an even grid and a list (with the cards as thumbnails), sorts by date made, date edited or title either way, or by hand: drag cards or rows into any order (each page keeps its own), and drop a note on a folder to file it. It can put folders first and hide note text; the slider at the bottom sizes the cards, smallest at first. Or the open note. A note opens in reader mode with just its title and text, with a Sans or Serif choice and a text size at the bottom. Edit (⌘E) edits its Markdown, showing the syntax only on the line being edited; selecting text brings up a formatting bar, and ⌘B, ⌘I and ⌘K work. Copy copies the note as Markdown. Timestamps in the note are links that play the video from that moment.
+- **Right:** the note's video on a dotted canvas, with Frames (F), Info (I) and Delete (D) under it; recordings have no frames, so they have no Frames button. Frames moves the frames grabbed from on-screen text into the middle as a grid; Info moves the video into the middle and shows its details on the right. The note's Info button shows its details and summary on the right instead. Every view in the right pane starts with its way out: Back when it opened from something (the details go back to the note or the frames, the note's info back to its video), Close when it's the pane's first view. Back and forward (⌘[ and ⌘]) work everywhere.
+
+The empty states (a new Home, an empty folder, a search with no results, a video with no text on screen) fit any pane: cards and their handwritten remarks only appear where they fit whole, the headline steps down in size for narrow panes, and the whole scene grows on large displays.
 
 Both side panes slide away (⌘. for the left, ⌘P for the right), and the right one resizes by dragging its edge. New notes go into the folder you're looking at. ⌘N or ⌘O makes a note, ⇧⌘N makes a folder.
 
@@ -33,6 +35,38 @@ The sparkles button (⌘J) opens the assistant on the right. Chat with it like a
 | Claude (Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5) | Anthropic, with your API key from Settings › Assistant, kept in the keychain |
 
 The on-device model holds a few pages at a time, so it reads long notes in parts; the others read far more at once.
+
+## Colors
+
+Ovyl uses Gold & Graphite, taken from the app icon, and follows the system's light or dark appearance. Every color comes from `Palette` (`Ovyl/UI/Palette.swift`):
+
+- **Surfaces:** off-white `#F6F6F6` behind everything with white cards in light mode; near-black `#060606` with `#121212` cards in dark mode. The sidebar, the notes and the right pane share the background, set apart by hairlines; text wells and progress tracks are a step sunken.
+- **Gold is the one accent:** the main action on a screen is a gold button with a dark label, and gold marks what's selected, toggles and progress. Text in gold (links, timestamps, the handwriting in the empty states) is bronze `#9A5517` in light mode so it stays readable, and gold in dark mode.
+- **Shimmer** (lime, mint, ice) only appears in gradients: the gold progress bar and the ring around the app mark in the assistant.
+- **Status colors** stay apart from gold: green for done, red-orange for warnings, red for failures.
+- **Folders keep the colors you pick** with the color flower.
+
+## The logo
+
+The mark is three slanted strokes, tallest first, standing on one line. The app icon is an Icon Composer document, `Ovyl/Resources/AppIcon.icon`: softly lit ink strokes on a cream-to-amber gold, the small stroke in iridescent pearl, and in dark mode gold strokes with a mint edge on near-black under a warm glow; clear and tinted icons get plain white strokes. Each stroke is its own layer, lit across its width from the top left. Open it in Icon Composer to change it.
+
+While Ovyl works, the mark comes apart into simple shapes, acts out what's happening, and springs back together (`Ovyl/UI/Logo`):
+
+| Motion | Only for | What the strokes do |
+|--------|----------|---------------------|
+| Opening | a video, recording or pictures opening | flow left one place at a time, the largest shrinking away as a new one grows in |
+| Waiting | a note queued behind another | sway gently, one after another, and settle |
+| Preparing | the speech model getting ready (in the sidebar and on a note) | pull into dots that circle the middle like a turning wheel |
+| Listening | the audio being read and listened to for music | stand up as sound levels and keep bouncing |
+| Transcribing | speech becoming text | stand up as sound levels, bounce, then tip over into lines of text |
+| Reading | on-screen text and pictures being read | the large stroke sweeps across as a scanner, lines of text growing behind it |
+| Writing | the note being written | lie down as lines written one after another, then fold into a page |
+| Thinking | the assistant before it answers | round into dots that hop in turn |
+| Failed | a note that couldn't be made | wobble, tumble into a heap, and pull themselves back up |
+
+Each motion has one purpose and is never borrowed for another. A note's motion follows its stage, matched to the pipeline's own step names.
+
+Every move is a spring, and each new move is added on top of the springs still running instead of starting from rest, so pieces carry their speed from one pose into the next and round the loop; beats can overlap, and nothing stops dead. Pieces travel in arcs, stretch along the way they move and squash as they set off and land; bars and lines that grow in place stay rigid. Each piece shrinks to a dot before the dots gather where the strokes stand, and the strokes grow out of them, so no stroke sweeps across another. Switching stage mid-motion carries on at the same speed into the mark, then the new motion. Frames are drawn off the main thread and cost about 25 µs each. With Reduce Motion the mark stays whole and breathes.
 
 ## Storage
 
@@ -111,7 +145,7 @@ The test fixtures are three narrated slides with a burned-in caption (and the sa
 - `Ovyl/Index`: the search index (passages by words and by meaning) and the indexer that keeps it in step with the notes.
 - `Ovyl/Assistant`: chats, the library tools the assistant works through, and the Claude client.
 - `Ovyl/Model`: the SwiftData `Note` and `Folder`, the note's JSON content, and its Markdown: written, parsed and exported.
-- `Ovyl/UI`: SwiftUI views: the sidebar, notes list, note page, media pane, frames grid, media viewer and info panes, and the Markdown reader and editor in `Ovyl/UI/Markdown`.
+- `Ovyl/UI`: SwiftUI views: the sidebar, notes list, note page, media pane, frames grid, media viewer and info panes, the Markdown reader and editor in `Ovyl/UI/Markdown`, and the logo and its motions in `Ovyl/UI/Logo`.
 - `OvylTests`: Swift Testing unit tests, `PipelineIntegrationTests`, the index and tools in `LibraryTests`, and the assistant with the on-device model in `AssistantTests`.
 
 ## Credits

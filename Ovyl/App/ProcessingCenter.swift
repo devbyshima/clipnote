@@ -144,11 +144,16 @@ final class ProcessingCenter {
     }
 
     func stop(_ note: Note) {
-        if processingID == note.id {
+        let wasProcessing = processingID == note.id
+        if wasProcessing {
             currentRun?.cancel()
         } else {
             queue.removeAll { $0 == note.id }
             markStopped(note)
+        }
+        // With nothing else to make, the speech model stops getting ready.
+        if queue.isEmpty, wasProcessing || processingID == nil {
+            Task { await WhisperService.shared.standDown() }
         }
     }
 
@@ -297,7 +302,8 @@ final class ProcessingCenter {
 
     private func apply(_ update: PipelineUpdate, to id: UUID) {
         guard processingID == id, let note = note(with: id), note.status == .processing else { return }
-        note.stage = update.stage
+        // Between steps the note keeps saying what it last did.
+        if update.stage != ProgressBoard.between { note.stage = update.stage }
         note.progress = max(note.progress, update.fraction)
     }
 

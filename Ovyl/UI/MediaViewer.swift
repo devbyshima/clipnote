@@ -27,7 +27,7 @@ struct MediaViewer: View {
                         .font(.system(size: 13.5, weight: .medium))
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .lineLimit(1)
             } trailing: {
@@ -54,7 +54,7 @@ struct MediaViewer: View {
             .onAppear { focused = true }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylCanvas)
+        .background(Palette.background)
     }
 
     private var title: String {
@@ -86,12 +86,12 @@ struct MediaViewer: View {
                 }
             }
             Button(note.kind == .pictures ? "Show All Pictures" : "Show All Frames", systemImage: "square.grid.2x2") { navigator.go(.gallery(note.id)) }
-        } else {
+        } else if note.hasGallery {
             Button("Show Frames", systemImage: "square.grid.2x2") { navigator.go(.gallery(note.id)) }
         }
         Button("Show in Finder", systemImage: "folder") { note.revealSource() }
         Divider()
-        Button("Back to the Note", systemImage: "doc.text") { navigator.go(.note(note.id)) }
+        Button("Back to the Note", systemImage: "doc.text") { navigator.goBack(to: .note(note.id)) }
     }
 }
 
@@ -113,7 +113,7 @@ struct ZoomableImage: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: image.size.width * scale, height: image.size.height * scale)
-                        .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
+                        .shadow(color: Palette.shadow, radius: 12, y: 4)
                         .padding(.horizontal, 40)
                         .padding(.top, 40)
                         .padding(.bottom, 80)

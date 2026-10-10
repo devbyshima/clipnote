@@ -17,6 +17,21 @@ struct InspectorView: View {
 
     private var items: [GalleryItem] { media.items(for: note) }
 
+    /// The media and its info opened from the note, its frames or the
+    /// media pane, so the way out is back there, with the middle; with
+    /// nowhere to go back to, the pane closes.
+    private var leave: InspectorHeader.Leave {
+        guard let previous = navigator.previous else { return .close { showRightPane = false } }
+        let help: String = switch previous {
+        case .note: "Back to the note (⌘[)"
+        case .gallery: note.kind == .pictures ? "Back to the pictures (⌘[)" : "Back to the frames (⌘[)"
+        case .media: "Back (⌘[)"
+        case .home: "Back to Home (⌘[)"
+        case .folder: "Back to the folder (⌘[)"
+        }
+        return .back(help) { navigator.goBack() }
+    }
+
     /// The frame or picture described, if it's one image rather than the note's media.
     private var shownItem: GalleryItem? {
         guard let item, items.indices.contains(item) else { return nil }
@@ -25,7 +40,7 @@ struct InspectorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            InspectorHeader(title: "Info") { showRightPane = false }
+            InspectorHeader(title: "Info", leave: leave)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -66,7 +81,7 @@ struct InspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylCanvas, ignoresSafeAreaEdges: .top)
+        .background(Palette.background, ignoresSafeAreaEdges: .top)
         .task(id: "\(note.id)-\(item ?? -1)-\(note.contentData?.count ?? 0)") {
             details = await MediaDetails.load(for: note, item: shownItem, pictureIndex: pictureIndex)
         }
@@ -146,9 +161,28 @@ struct NoteInfoView: View {
 
     private var plainText: String { NoteMarkdown.plainText(note.markdown) }
 
+    @AppStorage("showMedia") private var showRightPane = true
+
+    /// Opened over the note's media, back to it; opened into a hidden pane,
+    /// or for a note with no media, closing the pane.
+    private var leave: InspectorHeader.Leave {
+        if navigator.noteInfoReturnsToMedia, note.kind != .text {
+            let media = switch note.mediaKind {
+            case .audio: "recording"
+            case .pictures: "pictures"
+            default: "video"
+            }
+            return .back("Back to the \(media)") { navigator.showsNoteInfo = false }
+        }
+        return .close {
+            navigator.showsNoteInfo = false
+            showRightPane = false
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            InspectorHeader(title: "Note info") { navigator.showsNoteInfo = false }
+            InspectorHeader(title: "Note info", leave: leave)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -172,7 +206,7 @@ struct NoteInfoView: View {
             InspectorBottomBar(note: note, copyHelp: "Copy the note") { copyString(note.markdown) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylCanvas, ignoresSafeAreaEdges: .top)
+        .background(Palette.background, ignoresSafeAreaEdges: .top)
     }
 
     /// A small card with the start of the note, as in a file preview.
@@ -183,15 +217,15 @@ struct NoteInfoView: View {
                 .lineLimit(2)
             Text(String(plainText.prefix(500)))
                 .font(.system(size: 8.5))
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .lineSpacing(1)
         }
         .padding(12)
         .frame(width: 180, height: 136, alignment: .topLeading)
         .clipped()
-        .background(Color.ovylSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
+        .shadow(color: Palette.shadow, radius: 4, y: 1)
     }
 
     private var madeFrom: String {
@@ -266,7 +300,7 @@ struct SummaryBullets: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(sentences.enumerated()), id: \.offset) { _, sentence in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("•").foregroundStyle(Color.ovylSecondary)
+                    Text("•").foregroundStyle(Palette.textSecondary)
                     Text(sentence)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -281,21 +315,35 @@ struct SummaryBullets: View {
 // MARK: - Shared parts
 
 /// The inspector's top row: its name and a close button.
+/// The top of a view in the right pane: first a way out, then the title.
+/// A view opened from another goes back to it; the pane's first view
+/// closes the pane. Never both, so the way out says where it leads.
 struct InspectorHeader: View {
+    enum Leave {
+        /// Back to what this opened from, with help naming it.
+        case back(String, () -> Void)
+        case close(() -> Void)
+    }
+
     let title: String
-    let close: () -> Void
+    let leave: Leave
 
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
+            PillGroup {
+                switch leave {
+                case .back(let help, let action):
+                    PillButton(symbol: "chevron.left", help: help, action: action)
+                case .close(let action):
+                    PillButton(symbol: "xmark", help: "Close (⌘P)", action: action)
+                }
+            }
             Text(title)
                 .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Palette.textPrimary)
             Spacer()
-            PillGroup {
-                PillButton(symbol: "xmark", help: "Close", action: close)
-            }
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
+        .padding(.horizontal, 12)
         .frame(height: MainWindowStyler.barHeight)
         .background(WindowDragHandle())
     }
@@ -314,7 +362,7 @@ struct InspectorRow<Value: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: 92, alignment: .leading)
             value
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -329,10 +377,10 @@ struct InspectorSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Rectangle().fill(Color.ovylBorder).frame(height: 1).padding(.vertical, 8)
+            Rectangle().fill(Palette.border).frame(height: 1).padding(.vertical, 8)
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
             content
         }
         .padding(.top, 8)
@@ -347,7 +395,7 @@ struct TypePill: View {
             .font(.system(size: 12.5, weight: .medium))
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
-            .background(Capsule().fill(Color.ovylFill))
+            .background(Capsule().fill(Palette.fill))
     }
 }
 
@@ -360,7 +408,7 @@ struct InspectorIconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
         }
         .buttonStyle(.plain)
         .help(help)
@@ -392,7 +440,7 @@ struct EditableTitle: View {
                     isRenaming = true
                 } label: {
                     Image(systemName: "pencil")
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .help("Rename")
@@ -428,13 +476,13 @@ struct FolderChips: View {
                         Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .help("Take it out of the folder")
                 }
                 .font(.system(size: 13))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.ovylFill))
+                .background(Capsule().fill(Palette.fill))
             }
             Menu {
                 ForEach(folders) { folder in
@@ -448,7 +496,7 @@ struct FolderChips: View {
                     .font(.system(size: 13))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.ovylFill))
+                    .background(Capsule().fill(Palette.fill))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -474,17 +522,17 @@ struct InspectorBottomBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .overlay(alignment: .top) { Rectangle().fill(Color.ovylBorder).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
     }
 
     private func circleButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.primary.opacity(0.72))
+                .foregroundStyle(Palette.textPrimary.opacity(0.72))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.ovylSurface))
-                .overlay(Circle().strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+                .background(Circle().fill(Palette.surface))
+                .overlay(Circle().strokeBorder(Palette.border, lineWidth: 0.5))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

@@ -33,7 +33,7 @@ struct NotePageView: View {
                     ProcessingView(note: note)
                 }
             }
-            .background(Color.ovylBG)
+            .background(Palette.background)
         }
     }
 }
@@ -50,7 +50,7 @@ struct NoteTitle: View {
                 .truncationMode(.tail)
             Text(subtitle ?? note.sourceName)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .truncationMode(.middle)
         }
         .lineLimit(1)
@@ -99,11 +99,8 @@ struct ProcessingView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "waveform")
-                .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(Color.ovylAccent)
-                .symbolEffect(.variableColor.iterative.reversing, isActive: note.status == .processing)
-                .frame(height: 50)
+            LogoLoader(LogoMotion(note: note))
+                .frame(width: 72, height: 72)
 
             VStack(spacing: 6) {
                 Text(note.displayTitle)
@@ -111,19 +108,19 @@ struct ProcessingView: View {
                     .multilineTextAlignment(.center)
                 Text(note.status == .queued ? "Waiting for the note ahead of it" : note.stage)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .contentTransition(.opacity)
                     .animation(.default, value: note.stage)
             }
 
             if note.status == .processing {
                 VStack(spacing: 6) {
-                    ProgressView(value: note.progress)
+                    GoldProgressBar(value: note.progress)
                         .frame(width: 300)
                         .animation(.easeOut(duration: 0.3), value: note.progress)
                     Text(note.progress, format: .percent.precision(.fractionLength(0)))
                         .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
             }
 
@@ -143,7 +140,7 @@ struct FailedView: View {
     var body: some View {
         VStack(spacing: 16) {
             EmptyState(
-                symbol: "exclamationmark.triangle",
+                motion: .failed,
                 title: "Couldn't make this note",
                 message: note.errorMessage ?? "Something went wrong while making this note."
             )

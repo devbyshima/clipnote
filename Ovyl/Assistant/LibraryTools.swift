@@ -352,7 +352,7 @@ final class LibraryTools {
             if let note = center.note(with: id) { center.delete(note) }
         case .restoreText(let id, let previous):
             guard let note = center.note(with: id) else { return }
-            note.setMarkdown(previous ?? NoteMarkdown.body(of: note.content ?? NoteContent()))
+            note.setMarkdown(previous ?? NoteMarkdown.body(of: note.content ?? NoteContent(), source: note.mediaKind))
         case .restoreTitle(let id, let previous, let wasEdited):
             guard let note = center.note(with: id) else { return }
             note.title = previous

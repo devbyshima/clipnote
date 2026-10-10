@@ -30,9 +30,17 @@ struct FolderEmptyState: View {
     var body: some View {
         EmptyCanvas(marks: .days, still: 2.2) { grid, t, target in
             let round = Round(local: Ease.loop(t, lap: Self.lap, offset: 0.3))
-            let home = grid.cardFrame(column: Self.cell.column, row: Self.cell.row)
+            // The note and its remark beside it, where they fit whole; with no
+            // room for them the folder waits on its own.
+            let corner = grid.place([
+                GridPiece((Self.cell.column, Self.cell.row), size: CGSize(width: 92 + 4 + Remark.size(["drag it in"]).width, height: 92 * 1.2 + 4))
+            ])[0]
+            let home = CGRect(origin: corner ?? .zero, size: CGSize(width: 92, height: 44))
             let page = NotePage(title: "Team Sync", text: "Budget: Priya owns it from now on.\nLaunch moves to March 14.\n\nNext sync on Friday.", day: "TODAY", width: 92)
-            let start = CGPoint(x: home.minX + page.width / 2, y: home.minY + page.height / 2)
+            // Without room on the grid, the note waits small beside the folder.
+            let beside = target.map { CGPoint(x: min(($0.maxX + grid.size.width) / 2, grid.size.width - 30), y: $0.midY) }
+            let base: CGFloat = corner == nil ? 0.5 : 1
+            let start = corner == nil ? (beside ?? .zero) : CGPoint(x: home.minX + page.width / 2, y: home.minY + page.height / 2)
             let spot = target.map { CGPoint(x: $0.midX, y: $0.minY + 26) } ?? start
             let carry = round.carry
             let arc = CGFloat(sin(carry * .pi)) * 60
@@ -40,12 +48,12 @@ struct FolderEmptyState: View {
                 x: start.x + (spot.x - start.x) * carry,
                 y: start.y + (spot.y - start.y) * carry - arc + 6 * round.sink
             )
-            let scale = (1 + 0.04 * round.grab) * (1 - 0.5 * carry) * (1 - 0.3 * round.sink)
+            let scale = base * (1 + 0.04 * round.grab) * (1 - 0.5 * carry) * (1 - 0.3 * round.sink)
             let grip = CGPoint(x: center.x + page.width * 0.3 * scale, y: center.y - page.height * 0.12 * scale)
 
             ZStack(alignment: .topLeading) {
                 Remark("drag it in", time: round.local, start: 0.2)
-                    .opacity(round.kept)
+                    .opacity(corner == nil ? 0 : round.kept)
                     .offset(x: home.minX + page.width + 4, y: home.minY + page.height - 26)
 
                 NotePage(title: page.title, text: page.text, day: page.day, width: page.width, lift: 1 + 1.5 * round.grab * (1 - carry))
@@ -83,8 +91,9 @@ struct FolderEmptyState: View {
 
 /// The folder in the cards' own look: a colored back with its tab, a white
 /// sheet standing in it once a note is in, and the front with the name and
-/// count, which tips forward to take the note. Blue and dashed while a note
-/// is dragged over it.
+/// count, which tips forward to take the note. Ovyl's own folder: gold
+/// deepening toward ember, a shimmer along the front's top edge, and a
+/// warm glow; dashed in ember while a note is dragged over it.
 struct FolderGlyph: View {
     let target: Double
     let open: Double
@@ -93,7 +102,12 @@ struct FolderGlyph: View {
     let tick: Double
 
     private static let size = CGSize(width: 170, height: 102)
-    private let tint = HexColor("#AF52DE")
+    private let tint = HexColor(Palette.Hex.accent)
+    private let ember = HexColor(Palette.Hex.ember)
+    /// The back sits deeper than the front, so the two read apart on a
+    /// light page as well as a dark one.
+    private var back: HexColor { tint.blended(with: ember, 0.3) }
+    private var backFoot: HexColor { tint.blended(with: ember, 0.5) }
 
     var body: some View {
         let w = Self.size.width
@@ -102,20 +116,38 @@ struct FolderGlyph: View {
         let radius = (h * 0.15).rounded()
         ZStack(alignment: .topLeading) {
             FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius)
-                .fill(LinearGradient(colors: [tint.mixed(0.26).color, tint.mixed(0.17).color], startPoint: .top, endPoint: .bottom))
+                .fill(LinearGradient(colors: [back.color, backFoot.color], startPoint: .top, endPoint: .bottom))
+                .overlay(FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius).stroke(Palette.ember.opacity(0.45), lineWidth: 1))
                 .frame(width: w, height: front + radius)
 
             PaperSheets(count: 1, width: w, height: h, isRaised: filled > 0.5)
                 .offset(y: h * 0.12 * (1 - filled))
                 .opacity(filled)
 
-            LinearGradient(colors: [tint.mixed(0.17).color.opacity(0), tint.mixed(0.17).color], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [backFoot.color.opacity(0), backFoot.color], startPoint: .top, endPoint: .bottom)
                 .frame(width: w, height: h * 0.13)
                 .offset(y: front - h * 0.13)
 
             ZStack(alignment: .topLeading) {
                 UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
-                    .fill(LinearGradient(colors: [tint.color, tint.mixed(-0.025).color], startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: [tint.color, tint.blended(with: ember, 0.6).color], startPoint: .top, endPoint: .bottom))
+                    .overlay(
+                        UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
+                            .strokeBorder(Palette.ember.opacity(0.45), lineWidth: 1)
+                    )
+                // The shimmer along the front's top edge, as on the icons.
+                LinearGradient(
+                    stops: [
+                        .init(color: Palette.accent.opacity(0), location: 0),
+                        .init(color: Palette.shimmerLime, location: 0.3),
+                        .init(color: Palette.shimmerIce, location: 0.55),
+                        .init(color: Palette.shimmerMint, location: 0.75),
+                        .init(color: Palette.accent.opacity(0), location: 1),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(height: 1.5)
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Notes")
@@ -127,10 +159,10 @@ struct FolderGlyph: View {
                             .scaleEffect(1 + 0.3 * tick, anchor: .leading)
                     }
                     Spacer(minLength: 4)
-                    MoreDots(color: .white, scale: 0.6)
+                    MoreDots(color: Palette.onAccent, scale: 0.6)
                         .frame(height: 16)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.onAccent)
                 .padding(.horizontal, 14)
                 .padding(.top, 9)
             }
@@ -145,7 +177,7 @@ struct FolderGlyph: View {
                 .padding(-6)
                 .opacity(target)
         )
-        .shadow(color: tint.color.opacity(0.32), radius: 14, y: 8)
+        .shadow(color: Palette.ember.opacity(0.35), radius: 14, y: 8)
         .scaleEffect(1 + 0.03 * target)
     }
 }

@@ -20,23 +20,38 @@ struct FramesEmptyState: View {
         Shot(scene: 1, remark: "still nothing"),
     ]
 
-    private static let tour = Tour(count: shots.count, hold: 1.7, glide: 0.7, back: 1.9)
+    /// The reader's round over however many frames fit the pane.
+    private static func tour(_ count: Int) -> Tour {
+        Tour(count: max(count, 1), hold: 1.7, glide: 0.7, back: 1.9)
+    }
 
     var body: some View {
         EmptyCanvas(marks: .times(every: 12), still: 1.6) { grid, t, _ in
-            let frames = GridLayout.ring.map { cell in
-                let frame = grid.cardFrame(column: cell.0, row: cell.1)
-                return CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: ((frame.width - 10) * 0.46).rounded() + 10)
+            let card = grid.cardFrame(column: 0, row: 0).width
+            let size = CGSize(width: card, height: ((card - 10) * 0.46).rounded() + 10)
+            // Each frame with its remark under it and the reader's box and
+            // label around it, where they fit whole.
+            let placed = grid.place(Self.shots.enumerated().map { index, shot in
+                let remark = Remark.size([shot.remark])
+                return GridPiece(
+                    GridLayout.ring[index],
+                    size: CGSize(width: max(size.width, remark.width), height: size.height + 10 + remark.height),
+                    outset: EdgeInsets(top: 22, leading: 5, bottom: 0, trailing: 5)
+                )
+            })
+            let shown = placed.enumerated().compactMap { index, corner in
+                corner.map { (shot: Self.shots[index], frame: CGRect(origin: $0, size: size)) }
             }
-            let local = Ease.loop(t, lap: Self.tour.lap, offset: 0.7)
-            let kept = Self.tour.kept(at: local)
-            let center = Self.tour.position(at: local, stops: frames.map { CGPoint(x: $0.midX, y: $0.midY) }, middle: grid.size.height / 2)
-            let size = frames[0].size
+            let tour = Self.tour(shown.count)
+            let local = Ease.loop(t, lap: tour.lap, offset: 0.7)
+            let kept = tour.kept(at: local)
+            let center = shown.isEmpty ? .zero : tour.position(at: local, stops: shown.map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }, middle: grid.size.height / 2)
 
             ZStack(alignment: .topLeading) {
-                ForEach(Array(Self.shots.enumerated()), id: \.offset) { index, shot in
-                    let frame = frames[index]
-                    let checked = Ease.out(Ease.progress(local, from: Self.tour.arrival(index) + Self.tour.hold - 0.3, over: 0.4)) * kept
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, item in
+                    let shot = item.shot
+                    let frame = item.frame
+                    let checked = Ease.out(Ease.progress(local, from: tour.arrival(index) + tour.hold - 0.3, over: 0.4)) * kept
                     VStack(alignment: .leading, spacing: 10) {
                         Canvas { context, canvas in
                             let rect = CGRect(origin: .zero, size: canvas)
@@ -47,14 +62,15 @@ struct FramesEmptyState: View {
                         .padding(5)
                         .paperCard()
                         .opacity(1 - 0.4 * checked)
-                        Remark(shot.remark, time: local, start: Self.tour.arrival(index) + Self.tour.hold - 0.4)
+                        Remark(shot.remark, time: local, start: tour.arrival(index) + tour.hold - 0.4)
                             .opacity(kept)
                     }
                     .offset(x: frame.minX, y: frame.minY)
                 }
 
-                reader(local: local, size: size)
+                reader(local: local, size: size, tour: tour)
                     .position(center)
+                    .opacity(shown.isEmpty ? 0 : 1)
             }
             .frame(width: grid.size.width, height: grid.size.height, alignment: .topLeading)
             .opacity(Ease.out(Ease.progress(t, from: 0.2, over: 0.6)))
@@ -82,12 +98,12 @@ struct FramesEmptyState: View {
     /// The reader over the frame it's on: a dashed blue window, a line that
     /// scans down while it holds, a box where words would be that closes on
     /// nothing, and the count of what it found above.
-    private func reader(local: Double, size: CGSize) -> some View {
-        let index = (0..<Self.shots.count).last { local >= Self.tour.arrival($0) } ?? 0
-        let start = Self.tour.arrival(index)
-        let holding = local < start + Self.tour.hold ? Self.tour.holding(index, at: local) : 0
+    private func reader(local: Double, size: CGSize, tour: Tour) -> some View {
+        let index = (0..<tour.count).last { local >= tour.arrival($0) } ?? 0
+        let start = tour.arrival(index)
+        let holding = local < start + tour.hold ? tour.holding(index, at: local) : 0
         let scan = Ease.inOut(Ease.progress(local, from: start + 0.15, over: 0.7))
-        let search = Ease.progress(local, from: start + 0.8, over: Self.tour.hold - 0.9)
+        let search = Ease.progress(local, from: start + 0.8, over: tour.hold - 0.9)
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         let box = CGSize(width: size.width + 10, height: size.height + 10)
         return ZStack(alignment: .topLeading) {

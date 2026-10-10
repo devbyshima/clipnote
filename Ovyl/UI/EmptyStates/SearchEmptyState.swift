@@ -24,7 +24,10 @@ struct SearchEmptyState: View {
 
     private static let page: CGFloat = 92
 
-    private static let tour = Tour(count: entries.count, hold: 1.5, glide: 0.75, back: 1.9)
+    /// The glass's round over however many notes fit the pane.
+    private static func tour(_ count: Int) -> Tour {
+        Tour(count: max(count, 1), hold: 1.5, glide: 0.75, back: 1.9)
+    }
     private static let lens: CGFloat = 70
     private static let zoom: CGFloat = 1.45
 
@@ -37,18 +40,28 @@ struct SearchEmptyState: View {
 
     var body: some View {
         EmptyCanvas(marks: .days, still: 1.4) { grid, t, _ in
-            let frames = GridLayout.ring.map { grid.cardFrame(column: $0.0, row: $0.1) }
-            let local = Ease.loop(t, lap: Self.tour.lap, offset: 0.7)
-            let stops = frames.map { CGPoint(x: $0.minX + Self.page / 2, y: $0.minY + 30) }
-            let glass = Self.tour.position(at: local, stops: stops, middle: grid.size.height / 2)
-            let kept = Self.tour.kept(at: local)
+            // Each note with its remark beside it, where they fit whole.
+            let placed = grid.place(Self.entries.enumerated().map { index, entry in
+                // The glass reaches a little above the page, and past its side.
+                GridPiece(
+                    GridLayout.ring[index],
+                    size: CGSize(width: Self.page + 4 + Remark.size([entry.remark]).width, height: Self.page * 1.2 + 4),
+                    outset: EdgeInsets(top: 8, leading: 0, bottom: 0, trailing: 0)
+                )
+            })
+            let shown = placed.enumerated().compactMap { index, corner in corner.map { (entry: Self.entries[index], corner: $0) } }
+            let tour = Self.tour(shown.count)
+            let local = Ease.loop(t, lap: tour.lap, offset: 0.7)
+            let stops = shown.map { CGPoint(x: $0.corner.x + Self.page / 2, y: $0.corner.y + 30) }
+            let glass = stops.isEmpty ? .zero : tour.position(at: local, stops: stops, middle: grid.size.height / 2)
+            let kept = tour.kept(at: local)
 
             ZStack(alignment: .topLeading) {
-                notes(frames, size: grid.size, local: local, kept: kept, remarks: true)
+                notes(shown, tour: tour, size: grid.size, local: local, kept: kept, remarks: true)
 
-                // What the glass shows: the same notes, larger, tinted blue.
+                // What the glass shows: the same notes, larger, in gold.
                 ZStack(alignment: .topLeading) {
-                    notes(frames, size: grid.size, local: local, kept: 0, remarks: false)
+                    notes(shown, tour: tour, size: grid.size, local: local, kept: 0, remarks: false)
                         .scaleEffect(Self.zoom, anchor: grid.unit(glass))
                     Circle()
                         .fill(SceneColor.highlightSoft)
@@ -65,6 +78,7 @@ struct SearchEmptyState: View {
                 Magnifier(diameter: Self.lens)
                     .position(glass)
             }
+            .opacity(shown.isEmpty ? 0 : 1)
             .frame(width: grid.size.width, height: grid.size.height, alignment: .topLeading)
             .opacity(Ease.out(Ease.progress(t, from: 0.2, over: 0.6)))
         } headline: { t in
@@ -80,22 +94,22 @@ struct SearchEmptyState: View {
 
     /// The notes in their cells. Each dims once the glass has checked it and
     /// gets its remark, until the round starts over.
-    private func notes(_ frames: [CGRect], size: CGSize, local: Double, kept: Double, remarks: Bool) -> some View {
+    private func notes(_ shown: [(entry: Entry, corner: CGPoint)], tour: Tour, size: CGSize, local: Double, kept: Double, remarks: Bool) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(Array(Self.entries.enumerated()), id: \.offset) { index, entry in
-                let frame = frames[index]
-                let checked = Ease.out(Ease.progress(local, from: Self.tour.arrival(index) + Self.tour.hold - 0.3, over: 0.4)) * kept
+            ForEach(Array(shown.enumerated()), id: \.offset) { index, item in
+                let entry = item.entry
+                let checked = Ease.out(Ease.progress(local, from: tour.arrival(index) + tour.hold - 0.3, over: 0.4)) * kept
                 // The remark beside the page, at its foot, so it stays in the cell.
                 HStack(alignment: .bottom, spacing: 4) {
                     NotePage(title: entry.title, text: entry.text, day: entry.day, width: Self.page)
                         .opacity(1 - 0.45 * checked)
                     if remarks {
-                        Remark(entry.remark, time: local, start: Self.tour.arrival(index) + Self.tour.hold - 0.45)
+                        Remark(entry.remark, time: local, start: tour.arrival(index) + tour.hold - 0.45)
                             .opacity(kept)
                             .padding(.bottom, 2)
                     }
                 }
-                .offset(x: frame.minX, y: frame.minY)
+                .offset(x: item.corner.x, y: item.corner.y)
             }
         }
         // The whole pane, so the glass's zoom is anchored where it is.

@@ -4,7 +4,8 @@ import Foundation
 /// follows Obsidian: on-screen text and music are callouts, and
 /// timestamps are links (`[1:05](#t=65)`) that play the video from there.
 nonisolated enum NoteMarkdown {
-    static func body(of content: NoteContent) -> String {
+    /// The note's text; `source` words what's said when nothing was found.
+    static func body(of content: NoteContent, source: MediaKind = .video) -> String {
         var blocks: [String] = []
         if let notice = content.notice {
             blocks.append(callout("warning", title: "Heads up", lines: [notice]))
@@ -19,9 +20,11 @@ nonisolated enum NoteMarkdown {
 
         let sections = Timeline.sections(of: content)
         if sections.isEmpty {
-            blocks.append(content.isPictures
-                ? "*No text was found in the pictures.*"
-                : "*No speech or on-screen text was found in this video.*")
+            blocks.append(
+                content.isPictures || source == .pictures ? "*No text was found in the pictures.*"
+                    : source == .audio ? "*No speech was found in this recording.*"
+                    : "*No speech or on-screen text was found in this video.*"
+            )
         }
         for section in sections {
             if let heading = section.heading {

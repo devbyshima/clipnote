@@ -63,7 +63,7 @@ struct MainWindowStyler: NSViewRepresentable {
             window.titleVisibility = .hidden
             window.titlebarSeparatorStyle = .none
             window.isOpaque = true
-            window.backgroundColor = .ovylBG
+            window.backgroundColor = Palette.NS.background
 
             placeTrafficLights(window)
 

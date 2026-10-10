@@ -290,9 +290,38 @@ actor ClipPipeline {
 
 /// Combines the progress of steps that run side by side into one bar.
 actor ProgressBoard {
-    enum Step: Hashable {
+    enum Step: Hashable, CaseIterable {
         case preparing, extractingAudio, listening, loadingModel, transcribing, readingScreen, formatting
+
+        /// How the step is worded on a note.
+        func label(isPictures: Bool = false, isSlowModelLoad: Bool = false) -> String {
+            switch self {
+            case .preparing: "Opening video"
+            case .extractingAudio: "Reading audio"
+            case .listening: "Listening for music"
+            case .loadingModel: isSlowModelLoad
+                ? "Getting the speech model ready (first time only, about a minute)"
+                : "Loading the speech model"
+            case .transcribing: "Transcribing speech"
+            case .readingScreen: isPictures ? "Reading the pictures" : "Reading on-screen text"
+            case .formatting: "Writing the note"
+            }
+        }
+
+        /// The step a note's stage line names first, in any of its wordings.
+        /// Steps that run side by side are joined with " · ".
+        static func first(in stage: String) -> Step? {
+            let first = stage.components(separatedBy: " · ").first ?? stage
+            return allCases.first { step in
+                [false, true].contains { pictures in
+                    [false, true].contains { slow in step.label(isPictures: pictures, isSlowModelLoad: slow) == first }
+                }
+            }
+        }
     }
+
+    /// The stage line while no step is running, between one and the next.
+    static let between = "Working"
 
     private let handler: @Sendable (PipelineUpdate) -> Void
     private var fractions: [Step: Double] = [:]
@@ -343,18 +372,7 @@ actor ProgressBoard {
     }
 
     private func stageText() -> String {
-        let labels: [Step: String] = [
-            .preparing: "Opening video",
-            .extractingAudio: "Reading audio",
-            .listening: "Listening for music",
-            .loadingModel: isSlowModelLoad
-                ? "Getting the speech model ready (first time only, about a minute)"
-                : "Loading the speech model",
-            .transcribing: "Transcribing speech",
-            .readingScreen: isPictures ? "Reading the pictures" : "Reading on-screen text",
-            .formatting: "Writing the note",
-        ]
-        let current = active.compactMap { labels[$0] }
-        return current.isEmpty ? "Working" : current.joined(separator: " · ")
+        let current = active.map { $0.label(isPictures: isPictures, isSlowModelLoad: isSlowModelLoad) }
+        return current.isEmpty ? Self.between : current.joined(separator: " · ")
     }
 }

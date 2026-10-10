@@ -198,7 +198,7 @@ struct CardGrid: View {
                 }
             }
         }
-        .background(Color.ovylBG)
+        .background(Palette.background)
         .alert("Rename Folder", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $renameText)
             Button("Rename") {
@@ -464,18 +464,20 @@ struct NoteCard: View {
                     .padding(.bottom, 14 * scale)
             }
         case .queued, .processing:
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
+                LogoLoader(LogoMotion(note: note))
+                    .frame(width: 30 * scale, height: 30 * scale)
+                    .foregroundStyle(CardColor.title)
                 Text(note.status == .queued ? "Waiting" : (note.stage.isEmpty ? "Working" : note.stage))
                     .font(.system(size: 12.5))
                     .foregroundStyle(CardColor.body)
-                ProgressView(value: note.progress)
-                    .controlSize(.small)
+                GoldProgressBar(value: note.progress, height: 4)
             }
             .padding(.top, 14)
         case .failed:
             Label(note.errorMessage ?? "Couldn't make this note", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.danger)
                 .lineLimit(3)
                 .padding(.top, 14)
         }
@@ -534,22 +536,16 @@ struct MoreDots: View {
     }
 }
 
-/// The note cards' colors, light and dark.
+/// The note cards' colors, from the palette: a surface with a hairline
+/// edge, and ink.
 enum CardColor {
-    private static func dynamic(_ light: (CGFloat, CGFloat, CGFloat, CGFloat), _ dark: (CGFloat, CGFloat, CGFloat, CGFloat)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let c = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-            return NSColor(srgbRed: c.0 / 255, green: c.1 / 255, blue: c.2 / 255, alpha: c.3)
-        })
-    }
-
-    static let top = dynamic((255, 255, 255, 1), (44, 44, 46, 1))
-    static let bottom = dynamic((247, 247, 248, 1), (36, 36, 38, 1))
-    static let edge = dynamic((0, 0, 0, 0.055), (255, 255, 255, 0.07))
-    static let shadow = dynamic((0, 0, 0, 0.06), (0, 0, 0, 0.4))
-    static let title = dynamic((29, 29, 31, 1), (245, 245, 247, 1))
-    static let body = dynamic((110, 110, 115, 1), (160, 160, 166, 1))
-    static let meta = dynamic((134, 134, 139, 1), (142, 142, 147, 1))
+    static let top = Palette.surface
+    static let bottom = Palette.surface
+    static let edge = Palette.border
+    static let shadow = Palette.shadow
+    static let title = Palette.textPrimary
+    static let body = Palette.textSecondary
+    static let meta = Palette.textSecondary
 }
 
 // MARK: - Folder card
@@ -575,7 +571,7 @@ struct FolderCard: View {
 
     var body: some View {
         let tint = HexColor(folder.hex)
-        let text: Color = tint.isLight ? Color.black.opacity(0.78) : .white
+        let text: Color = tint.isLight ? Palette.onLight : Palette.onDark
         GeometryReader { geo in
             let h = geo.size.height
             let front = (h * FolderArtwork.front).rounded()
@@ -806,19 +802,19 @@ struct PaperSheets: View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(sheets.enumerated()), id: \.offset) { index, sheet in
                 RoundedRectangle(cornerRadius: width * 0.035, style: .continuous)
-                    .fill(LinearGradient(colors: [.white, Color(white: 0.96)], startPoint: .top, endPoint: .bottom))
+                    .fill(Palette.onDark)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: height * 0.032) {
                             ForEach(Array(sheet.lines.enumerated()), id: \.offset) { _, line in
                                 Capsule()
-                                    .fill(Color(white: 0.9))
+                                    .fill(Palette.onLight.opacity(0.1))
                                     .frame(width: width * sheet.width * 0.78 * line, height: max(1, height * 0.028))
                             }
                         }
                         .padding(.top, height * 0.075)
                         .padding(.leading, width * 0.045)
                     }
-                    .shadow(color: .black.opacity(0.08), radius: min(3, height * 0.02), y: min(1, height * 0.006))
+                    .shadow(color: Palette.onLight.opacity(0.1), radius: min(3, height * 0.02), y: min(1, height * 0.006))
                     .frame(width: width * sheet.width, height: height * 0.6)
                     .rotationEffect(.degrees(sheet.angle), anchor: .bottom)
                     .offset(x: width * sheet.x, y: height * sheet.top - (isRaised ? height * (0.03 + 0.012 * Double(index)) : 0))
@@ -857,7 +853,7 @@ struct CardSizeBar: View {
             .buttonStyle(.plain)
             .help("Larger cards")
         }
-        .foregroundStyle(Color.primary.opacity(0.62))
+        .foregroundStyle(Palette.textPrimary.opacity(0.62))
     }
 
     private func step(_ amount: Double) {
@@ -880,12 +876,12 @@ struct SizeSlider: View {
             let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
             let x = travel * CGFloat(min(max(fraction, 0), 1))
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.ovylFill).frame(height: 4)
-                Capsule().fill(Color.ovylAccent).frame(width: x + knob / 2, height: 4)
+                Capsule().fill(Palette.fill).frame(height: 4)
+                Capsule().fill(Palette.accent).frame(width: x + knob / 2, height: 4)
                 Circle()
-                    .fill(.white)
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.22), radius: isDragging ? 4 : 2, y: 1)
+                    .fill(Palette.onDark)
+                    .overlay(Circle().strokeBorder(Palette.border, lineWidth: 0.5))
+                    .shadow(color: Palette.shadow, radius: isDragging ? 4 : 2, y: 1)
                     .frame(width: knob, height: knob)
                     .scaleEffect(isDragging ? 1.12 : 1)
                     .offset(x: x)
@@ -906,6 +902,7 @@ struct SizeSlider: View {
         .help("Card size")
         .accessibilityRepresentation {
             Slider(value: $value, in: range) { Text("Card size") }
+                .tint(Palette.accent)
         }
     }
 }
@@ -1022,13 +1019,13 @@ struct FolderListRow: View {
                     .lineLimit(1)
                 Text(count == 1 ? "1 note" : "\(count) notes")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: 8)
             Button(action: more) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
@@ -1038,7 +1035,7 @@ struct FolderListRow: View {
         }
         .padding(.horizontal, 30)
         .padding(.vertical, 10)
-        .background(isTargeted ? Color.ovylAccent.opacity(0.15) : isHovered ? Color.ovylFill.opacity(0.5) : .clear)
+        .background(isTargeted ? Palette.accentSoft : isHovered ? Palette.fill.opacity(0.5) : .clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture(perform: open)

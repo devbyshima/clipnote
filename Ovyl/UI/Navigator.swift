@@ -41,15 +41,29 @@ final class Navigator {
     var pendingDelete: UUID?
     /// Beside a note, the right pane shows the note's info instead of its media.
     var showsNoteInfo = false
+    /// The note's info was opened over its media, so leaving it goes back to
+    /// the media; opened into a hidden pane, leaving it closes the pane.
+    var noteInfoReturnsToMedia = false
 
-    init(_ route: Route = .home, showsNoteInfo: Bool = false) {
+    init(_ route: Route = .home, history: [Route] = [], showsNoteInfo: Bool = false) {
         self.route = route
+        back = history
         self.showsNoteInfo = showsNoteInfo
+        noteInfoReturnsToMedia = showsNoteInfo
         if route.isList { listRoute = route }
     }
 
     var canGoBack: Bool { !back.isEmpty }
     var canGoForward: Bool { !forward.isEmpty }
+
+    /// Where going back leads.
+    var previous: Route? { back.last }
+
+    /// Goes to `next` as a step back when it's where the window just came
+    /// from, so returning doesn't pile up history.
+    func goBack(to next: Route) {
+        if back.last == next { goBack() } else { go(next) }
+    }
 
     func go(_ next: Route) {
         guard next != route else { return }

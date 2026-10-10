@@ -10,6 +10,7 @@ struct NoteDocumentView: View {
     @Environment(ProcessingCenter.self) private var center
     @Environment(Navigator.self) private var navigator
     @AppStorage("showMedia") private var showRightPane = true
+    @AppStorage("showAssistant") private var showAssistant = false
     @Bindable var note: Note
     let folders: [Folder]
     let folderName: String?
@@ -65,14 +66,14 @@ struct NoteDocumentView: View {
                 .frame(maxWidth: .infinity)
             }
             .textSelection(.enabled)
-            .tint(Color.ovylAccent)
+            .tint(Palette.accentText)
             .environment(\.openURL, OpenURLAction(handler: onLink))
             .environment(\.readerStyle, style)
             .overlay(alignment: .bottom) {
                 if !isEditing { typographyBar.padding(.bottom, 16) }
             }
         }
-        .background(Color.ovylBG)
+        .background(Palette.background)
         .background { shortcuts }
         .onAppear(perform: load)
         .onDisappear(perform: flush)
@@ -109,7 +110,7 @@ struct NoteDocumentView: View {
                     if text.isEmpty {
                         Text("Start writing…")
                             .font(.ovyl(style.size, serif: serif))
-                            .foregroundStyle(Color.ovylFaint)
+                            .foregroundStyle(Palette.faint)
                             .allowsHitTesting(false)
                     }
                 }
@@ -117,19 +118,23 @@ struct NoteDocumentView: View {
         } else if blocks.isEmpty {
             Text("This note is empty. Press ⌘E to write in it.")
                 .font(.ovyl(style.size, serif: serif))
-                .foregroundStyle(Color.ovylFaint)
+                .foregroundStyle(Palette.faint)
         } else {
             MarkdownView(blocks: blocks) { line in toggleTask(at: line) }
         }
     }
 
-    private var showsInfo: Bool { showRightPane && navigator.showsNoteInfo }
+    private var showsInfo: Bool { showRightPane && !showAssistant && navigator.showsNoteInfo }
 
     /// Shows the note's info in the right pane, or goes back to its media.
+    /// Opened over the media, the info's way out is back to it; opened into
+    /// a hidden pane or over the assistant, it closes.
     private func toggleInfo() {
         if showsInfo {
             navigator.showsNoteInfo = false
         } else {
+            navigator.noteInfoReturnsToMedia = showRightPane && !showAssistant && navigator.showsNoteInfo == false && note.kind != .text
+            showAssistant = false
             navigator.showsNoteInfo = true
             showRightPane = true
         }
@@ -140,7 +145,7 @@ struct NoteDocumentView: View {
         FloatingBar {
             segment("Sans", isOn: !serif) { serif = false }
             segment("Serif", isOn: serif) { serif = true }
-            Rectangle().fill(Color.ovylBorder).frame(width: 1, height: 16).padding(.horizontal, 4)
+            Rectangle().fill(Palette.border).frame(width: 1, height: 16).padding(.horizontal, 4)
             Button { size = max(12, size - 1) } label: {
                 Image(systemName: "minus").frame(width: 26, height: 24).contentShape(Rectangle())
             }
@@ -156,7 +161,7 @@ struct NoteDocumentView: View {
             .disabled(size >= 24)
         }
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(Color.primary.opacity(0.8))
+        .foregroundStyle(Palette.textPrimary.opacity(0.8))
     }
 
     private func segment(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -165,7 +170,7 @@ struct NoteDocumentView: View {
                 .font(.ovyl(13, isOn ? .semibold : .regular, serif: title == "Serif"))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(isOn ? Color.ovylFill : .clear))
+                .background(Capsule().fill(isOn ? Palette.fill : .clear))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)

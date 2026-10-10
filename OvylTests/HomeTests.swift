@@ -91,6 +91,74 @@ struct HomeTests {
         print("HOME SNAPSHOTS \(Self.folder.path)")
     }
 
+    /// The logo where the app shows it: notes being made on Home and open,
+    /// a note that failed, and the assistant's welcome.
+    @Test func renderLogoPlaces() async throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        let (center, _) = try Self.library()
+        let defaults = UserDefaults.standard
+        let showed = defaults.bool(forKey: "showAssistant")
+        defer { defaults.set(showed, forKey: "showAssistant") }
+        defaults.set(false, forKey: "showAssistant")
+
+        let lecture = center.createTextNote(title: "Lecture 4", markdown: " ")
+        lecture.status = .processing
+        lecture.stage = "Transcribing speech"
+        lecture.progress = 0.42
+        lecture.createdAt = .now
+        let walkthrough = center.createTextNote(title: "Product walkthrough", markdown: " ")
+        walkthrough.status = .processing
+        walkthrough.stage = "Reading on-screen text"
+        walkthrough.progress = 0.71
+        walkthrough.createdAt = .now.addingTimeInterval(-5)
+        let broken = center.createTextNote(title: "Interview", markdown: " ")
+        broken.status = .failed
+        broken.errorMessage = "The video couldn't be opened."
+        broken.createdAt = .now.addingTimeInterval(-50_000)
+        center.save()
+
+        try await render(ContentView(route: .home), center: center, name: "logo-home", dark: false, time: 2.2)
+        try await render(ContentView(route: .note(lecture.id)), center: center, name: "logo-transcribing", dark: false, time: 2.2)
+        try await render(ContentView(route: .note(walkthrough.id)), center: center, name: "logo-reading", dark: true, time: 2.4)
+        try await render(ContentView(route: .note(broken.id)), center: center, name: "logo-failed", dark: false, time: 2.6)
+        defaults.set(true, forKey: "showAssistant")
+        try await render(ContentView(route: .home), center: center, name: "logo-assistant", dark: false, time: 2.2)
+        print("LOGO SNAPSHOTS \(Self.folder.path)")
+    }
+
+    /// The right pane's ways out, a recording without frames, the settings
+    /// tabs, and the shared background of the sidebar.
+    @Test func renderPanesAndSettings() async throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        let (center, _) = try Self.library()
+        let defaults = UserDefaults.standard
+        let showed = defaults.bool(forKey: "showAssistant")
+        defer { defaults.set(showed, forKey: "showAssistant") }
+        defaults.set(false, forKey: "showAssistant")
+        defaults.set(true, forKey: "showMedia")
+
+        let recording = Note(sourceName: "standup.m4a", sourceBookmark: nil)
+        recording.status = .ready
+        recording.title = "Standup"
+        center.context.insert(recording)
+        let video = Note(sourceName: "lecture.mp4", sourceBookmark: nil)
+        video.status = .ready
+        video.title = "Lecture 4"
+        center.context.insert(video)
+        center.save()
+
+        try await render(ContentView(route: .note(recording.id)), center: center, name: "pane-recording", dark: false)
+        try await render(ContentView(route: .note(video.id), showsNoteInfo: true), center: center, name: "pane-note-info-back", dark: false)
+        try await render(ContentView(route: .media(video.id, item: nil), history: [.note(video.id)]), center: center, name: "pane-inspector-back", dark: true)
+        try await render(ContentView(route: .media(video.id, item: nil)), center: center, name: "pane-inspector-close", dark: false)
+        for tab in ["speech", "screen", "assistant", "storage"] {
+            defaults.set(tab, forKey: "settingsTab")
+            try await render(SettingsView(), center: center, name: "settings-\(tab)", dark: tab == "assistant", size: CGSize(width: 560, height: 520))
+        }
+        defaults.removeObject(forKey: "settingsTab")
+        print("PANES \(Self.folder.path)")
+    }
+
     /// The flower opening out of the pill's color button and folding back
     /// into it, every 1/60 s along the springs the app uses, and with a
     /// petal and the center hovered.
@@ -217,10 +285,10 @@ struct HomeTests {
         #expect(NoteCard.preview(of: "## Heading\n\n[4:02](#t=242) So **this** is it.\n\n\n> [!screen] On screen\n> Slide") == "Heading\n\n4:02 So this is it.\n\nOn screen\nSlide")
     }
 
-    private func render(_ view: some View, center: ProcessingCenter, name: String, dark: Bool, size: CGSize = CGSize(width: 1320, height: 900)) async throws {
+    private func render(_ view: some View, center: ProcessingCenter, name: String, dark: Bool, size: CGSize = CGSize(width: 1320, height: 900), time: Double = 6.2) async throws {
         let root = view
             .environment(center)
-            .environment(\.motionTime, 6.2)
+            .environment(\.motionTime, time)
             .modelContainer(center.container)
         let hosting = NSHostingView(rootView: root)
         hosting.sizingOptions = [.minSize]

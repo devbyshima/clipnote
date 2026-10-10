@@ -17,10 +17,9 @@ struct GalleryView: View {
                 HStack(spacing: 7) {
                     Image(systemName: isPictures ? "photo.on.rectangle" : "film")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.ovylAccent)
+                        .foregroundStyle(Palette.accentText)
                     Text(isPictures ? "Pictures" : "Frames")
                         .font(.system(size: 14, weight: .medium))
-                    CountBadge(count: items.count)
                 }
             } trailing: {
                 RightPaneToggle()
@@ -50,7 +49,7 @@ struct GalleryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylBG)
+        .background(Palette.background)
     }
 
     private func aspectRatio(of item: GalleryItem) -> CGFloat {
@@ -73,17 +72,17 @@ struct GalleryTile: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(isHovered ? Color.ovylAccent : Color.ovylBorder, lineWidth: isHovered ? 2 : 0.5)
+                        .strokeBorder(isHovered ? Palette.accent : Palette.border, lineWidth: isHovered ? 2 : 0.5)
                 }
                 .overlay(alignment: .bottomLeading) {
                     if isHovered {
                         Text(item.time.map(TimeFormat.clock) ?? item.title)
                             .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .lineLimit(1)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Palette.onDark)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(.black.opacity(0.6), in: Capsule())
+                            .background(Palette.media.opacity(0.6), in: Capsule())
                             .padding(8)
                     }
                 }

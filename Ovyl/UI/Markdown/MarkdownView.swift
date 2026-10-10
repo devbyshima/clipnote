@@ -78,7 +78,7 @@ struct MarkdownBlockView: View {
         case .quote(let blocks):
             HStack(alignment: .top, spacing: 0) {
                 Rectangle()
-                    .fill(Color.ovylAccent)
+                    .fill(Palette.accent)
                     .frame(width: 2)
                 MarkdownView(blocks: blocks, onToggleTask: onToggleTask)
                     .padding(.leading, 22)
@@ -89,7 +89,7 @@ struct MarkdownBlockView: View {
         case .code(let language, let text):
             CodeBlockView(language: language, code: text)
         case .rule:
-            Rectangle().fill(Color.ovylBorder).frame(height: 1).padding(.vertical, 12)
+            Rectangle().fill(Palette.border).frame(height: 1).padding(.vertical, 12)
         case .table(let table):
             TableBlockView(table: table)
         }
@@ -127,9 +127,9 @@ enum MarkdownInline {
         for style in styles {
             text[style.0].font = style.1
             if style.strike { text[style.0].strikethroughStyle = .single }
-            if style.code { text[style.0].backgroundColor = Color.ovylCodeBG }
+            if style.code { text[style.0].backgroundColor = Palette.surfaceSunken }
             if let link = style.link {
-                text[style.0].foregroundColor = Color.ovylAccent
+                text[style.0].foregroundColor = Palette.accentText
                 let isAppLink = NoteMarkdown.seconds(in: link) != nil || NoteMarkdown.pictureIndex(in: link) != nil
                 if !isAppLink { text[style.0].underlineStyle = .single }
             }
@@ -160,7 +160,7 @@ enum MarkdownInline {
             let start = text.characters.index(text.startIndex, offsetBy: open)
             let innerStart = text.characters.index(start, offsetBy: 2)
             let innerEnd = text.characters.index(text.startIndex, offsetBy: close)
-            text[innerStart..<innerEnd].backgroundColor = Color.ovylHighlight
+            text[innerStart..<innerEnd].backgroundColor = Palette.highlight
             let closeEnd = text.characters.index(innerEnd, offsetBy: 2)
             text.removeSubrange(innerEnd..<closeEnd)
             let openStart = text.characters.index(text.startIndex, offsetBy: open)
@@ -206,7 +206,7 @@ struct MarkdownListView: View {
             Text(style.render(item.text))
                 .lineSpacing(style.lineSpacing)
                 .strikethrough(done)
-                .foregroundStyle(done ? Color.ovylSecondary : Color.primary)
+                .foregroundStyle(done ? Palette.textSecondary : Palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -217,7 +217,7 @@ struct MarkdownListView: View {
             ZStack(alignment: .leading) {
                 ForEach(0..<item.level, id: \.self) { level in
                     Rectangle()
-                        .fill(Color.primary.opacity(0.1))
+                        .fill(Palette.textPrimary.opacity(0.1))
                         .frame(width: 1)
                         .offset(x: CGFloat(level) * step + markerWidth / 2)
                 }
@@ -231,11 +231,11 @@ struct MarkdownListView: View {
         case .bullet:
             Text("•")
                 .font(.system(size: style.size, weight: .bold))
-                .foregroundStyle(Color.ovylFaint)
+                .foregroundStyle(Palette.faint)
         case .ordered(let number):
             Text("\(number).")
                 .font(.ovyl(style.size, serif: style.serif).monospacedDigit())
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize()
         case .task(let done):
             Button {
@@ -243,13 +243,13 @@ struct MarkdownListView: View {
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(done ? Color.ovylAccent : Color.clear)
+                        .fill(done ? Palette.accent : Color.clear)
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(done ? Color.ovylAccent : Color.ovylFaint, lineWidth: 1)
+                        .strokeBorder(done ? Palette.accent : Palette.faint, lineWidth: 1)
                     if done {
                         Image(systemName: "checkmark")
                             .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Palette.onAccent)
                     }
                 }
                 .frame(width: 15, height: 15)
@@ -325,25 +325,26 @@ struct CalloutStyle {
     let background: Color
 
     init(kind: String) {
-        let green = (Color.ovylAccent, Color.ovylAccent.opacity(0.09))
-        let neutral = (Color.primary.opacity(0.75), Color.primary.opacity(0.045))
-        let orange = (Color.orange, Color.orange.opacity(0.12))
-        let red = (Color.red, Color.red.opacity(0.11))
+        let gold = (Palette.accentText, Palette.accentSoft)
+        let success = (Palette.success, Palette.success.opacity(0.1))
+        let neutral = (Palette.textPrimary.opacity(0.75), Palette.fill)
+        let warning = (Palette.warning, Palette.warning.opacity(0.1))
+        let danger = (Palette.danger, Palette.danger.opacity(0.1))
         let (symbol, tint): (String, (Color, Color)) = switch kind {
-        case "summary", "abstract", "tldr": ("list.bullet.clipboard", green)
-        case "tip", "hint", "important": ("flame", green)
-        case "success", "check", "done": ("checkmark.circle", green)
+        case "summary", "abstract", "tldr": ("list.bullet.clipboard", gold)
+        case "tip", "hint", "important": ("flame", gold)
+        case "success", "check", "done": ("checkmark.circle", success)
         case "screen": ("text.viewfinder", neutral)
         case "music": ("music.note", neutral)
         case "quote", "cite": ("quote.opening", neutral)
         case "todo": ("checkmark.circle", neutral)
         case "example": ("list.bullet", neutral)
         case "info": ("info.circle", neutral)
-        case "question", "help", "faq": ("questionmark.circle", orange)
-        case "warning", "caution", "attention": ("exclamationmark.triangle", orange)
-        case "failure", "fail", "missing": ("xmark.circle", red)
-        case "danger", "error": ("bolt", red)
-        case "bug": ("ladybug", red)
+        case "question", "help", "faq": ("questionmark.circle", warning)
+        case "warning", "caution", "attention": ("exclamationmark.triangle", warning)
+        case "failure", "fail", "missing": ("xmark.circle", danger)
+        case "danger", "error": ("bolt", danger)
+        case "bug": ("ladybug", danger)
         default: ("pencil", neutral)
         }
         self.symbol = symbol
@@ -371,7 +372,7 @@ struct CodeBlockView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.ovylCodeBG, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .topTrailing) {
             if isHovered || copied {
                 Button {
@@ -385,10 +386,10 @@ struct CodeBlockView: View {
                 } label: {
                     Text(copied ? "Copied" : (language.isEmpty ? "Copy" : language))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.ovylCodeBG, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .padding(6)
@@ -420,7 +421,7 @@ struct TableBlockView: View {
                 }
             }
             .overlay {
-                Rectangle().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
+                Rectangle().strokeBorder(Palette.textPrimary.opacity(0.14), lineWidth: 1)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -438,7 +439,7 @@ struct TableBlockView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .overlay {
-                Rectangle().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
+                Rectangle().strokeBorder(Palette.textPrimary.opacity(0.1), lineWidth: 0.5)
             }
     }
 }

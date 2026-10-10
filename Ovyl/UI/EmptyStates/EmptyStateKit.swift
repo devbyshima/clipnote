@@ -78,29 +78,26 @@ enum Ease {
 
 // MARK: - Colors
 
-/// The empty states' colors, light and dark: a faint grid, paper cards,
-/// marker-yellow handwriting, and blue for what Ovyl is reading.
+/// The empty states' colors, from the palette: a faint grid, paper cards,
+/// bronze handwriting (gold in the dark), and a gold wash with an ember
+/// dashed edge for what Ovyl is reading.
 enum SceneColor {
-    private static func dynamic(_ light: (CGFloat, CGFloat, CGFloat, CGFloat), _ dark: (CGFloat, CGFloat, CGFloat, CGFloat)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let c = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-            return NSColor(srgbRed: c.0 / 255, green: c.1 / 255, blue: c.2 / 255, alpha: c.3)
-        })
-    }
-
-    static let line = dynamic((0, 0, 0, 0.065), (255, 255, 255, 0.055))
-    static let number = dynamic((0, 0, 0, 0.3), (255, 255, 255, 0.28))
-    static let card = dynamic((255, 255, 255, 1), (40, 40, 42, 1))
-    static let cardEdge = dynamic((0, 0, 0, 0.07), (255, 255, 255, 0.06))
-    static let cardShadow = dynamic((0, 0, 0, 0.06), (0, 0, 0, 0.35))
-    static let ink = dynamic((190, 140, 10, 1), (235, 200, 80, 1))
-    static let inset = dynamic((0, 0, 0, 0.045), (255, 255, 255, 0.045))
-    static let sketch = dynamic((0, 0, 0, 0.2), (255, 255, 255, 0.2))
-    static let highlight = dynamic((180, 210, 244, 0.6), (120, 170, 255, 0.16))
-    static let highlightSoft = dynamic((196, 221, 248, 0.32), (120, 170, 255, 0.08))
-    static let highlightEdge = dynamic((52, 126, 232, 0.95), (150, 190, 255, 0.75))
-    static let label = dynamic((0, 0, 0, 0.38), (255, 255, 255, 0.4))
-    static let pointer = dynamic((28, 28, 30, 1), (242, 242, 244, 1))
+    static let line = Palette.fill
+    static let number = Palette.textSecondary.opacity(0.75)
+    static let card = Palette.surface
+    static let cardEdge = Palette.border
+    static let cardShadow = Palette.shadow
+    static let ink = Palette.accentText
+    static let inset = Palette.fill
+    static let sketch = Palette.textSecondary.opacity(0.45)
+    static let highlight = Palette.accent.opacity(0.24)
+    static let highlightSoft = Palette.accent.opacity(0.1)
+    /// The dashed edge: decoration only, never text.
+    static let highlightEdge = Palette.ember
+    /// Text that names what's being read.
+    static let highlightText = Palette.accentText
+    static let label = Palette.textSecondary
+    static let pointer = Palette.textPrimary
 }
 
 // MARK: - Materials
@@ -138,7 +135,7 @@ struct MonoLabel: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Text(name).foregroundStyle(active ? SceneColor.highlightEdge : SceneColor.label)
+            Text(name).foregroundStyle(active ? SceneColor.highlightText : SceneColor.label)
             Text(count).foregroundStyle(SceneColor.label)
         }
         .font(.system(size: 10.5, weight: .medium).monospacedDigit())
@@ -325,6 +322,14 @@ struct Remark: View {
             }
         }
         .padding(.leading, 4)
+    }
+
+    /// The room the remark takes once written: its widest line and its lines'
+    /// height, with the room the writing reaches past its box.
+    static func size(_ lines: [String]) -> CGSize {
+        let font = NSFont.caveat(17, wght: 620)
+        let width = lines.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        return CGSize(width: (width + 4 + 10).rounded(.up), height: CGFloat(lines.count) * 21 + 6)
     }
 
     /// When line `index` starts; past the last line, when writing ends.

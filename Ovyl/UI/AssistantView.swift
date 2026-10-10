@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The assistant in the right pane: a header with new chat, history and
-/// close; the conversation; and a box to ask in, with the open note
+/// The assistant in the right pane: a header with close, history and new
+/// chat; the conversation; and a box to ask in, with the open note
 /// attached and the model to use.
 struct AssistantView: View {
     let currentNote: Note?
@@ -28,7 +28,7 @@ struct AssistantView: View {
                 .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylBG)
+        .background(Palette.background)
         .onChange(of: currentNote?.id) { attachesNote = true }
         .onAppear { focused = true }
     }
@@ -36,12 +36,9 @@ struct AssistantView: View {
     // MARK: Header
 
     private var header: some View {
+        // As in every view of the right pane: the way out first, then the title.
         HStack(spacing: 10) {
-            RoundButton(symbol: "plus", help: "New chat") {
-                session.newChat()
-                draft = ""
-                focused = true
-            }
+            RoundButton(symbol: "xmark", help: "Close the assistant (⌘J)", action: close)
             Text("Assistant")
                 .font(.system(size: 14.5, weight: .medium))
             Spacer()
@@ -49,7 +46,11 @@ struct AssistantView: View {
                 .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                     ChatHistory { showsHistory = false }
                 }
-            RoundButton(symbol: "xmark", help: "Close the assistant (⌘J)", action: close)
+            RoundButton(symbol: "plus", help: "New chat") {
+                session.newChat()
+                draft = ""
+                focused = true
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: MainWindowStyler.barHeight)
@@ -93,10 +94,19 @@ struct AssistantView: View {
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 18) {
             Spacer(minLength: 0)
+            // The app mark in a shimmer ring.
+            OvylMark(accent: Palette.accent)
+                .foregroundStyle(Palette.textPrimary)
+                .frame(width: 26, height: 26)
+                .frame(width: 46, height: 46)
+                .background(Palette.surface, in: Circle())
+                .padding(3)
+                .overlay(Circle().strokeBorder(Palette.shimmerRing, lineWidth: 3))
+                .padding(.bottom, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Ask about your notes.")
                     .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.62))
+                    .foregroundStyle(Palette.textPrimary.opacity(0.62))
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Or have them ")
                         .font(.system(size: 19, weight: .semibold))
@@ -106,7 +116,7 @@ struct AssistantView: View {
                 }
                 Text(session.model.privacy)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(.top, 6)
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -161,10 +171,10 @@ struct AssistantView: View {
                     .buttonStyle(.plain)
                     .help("Don't send this note")
                 }
-                .foregroundStyle(Color.primary.opacity(0.75))
+                .foregroundStyle(Palette.textPrimary.opacity(0.75))
                 .padding(.horizontal, 9)
                 .frame(height: 24)
-                .background(Capsule().fill(Color.ovylFill))
+                .background(Capsule().fill(Palette.fill))
             }
             TextField("Ask anything…", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -181,10 +191,10 @@ struct AssistantView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 10)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.ovylSurface))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.surface))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(focused ? Color.ovylAccent : Color.ovylBorder, lineWidth: focused ? 1.5 : 1)
+                .strokeBorder(focused ? Palette.accent : Palette.border, lineWidth: focused ? 1.5 : 1)
         )
         .animation(.easeOut(duration: 0.12), value: focused)
     }
@@ -196,9 +206,9 @@ struct AssistantView: View {
         } label: {
             Image(systemName: session.isResponding ? "stop.fill" : "arrow.up")
                 .font(.system(size: session.isResponding ? 10 : 13, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(empty && !session.isResponding ? Palette.textSecondary : Palette.onAccent)
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.ovylAccent.opacity(empty && !session.isResponding ? 0.35 : 1)))
+                .background(Circle().fill(empty && !session.isResponding ? Palette.surfaceSunken : Palette.accent))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -236,35 +246,35 @@ struct UserMessageView: View {
             ForEach(message.context, id: \.self) { item in
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.ovylFill)
+                        .fill(Palette.fill)
                         .frame(width: 34, height: 34)
                         .overlay {
                             Image(systemName: "doc.text")
                                 .font(.system(size: 14))
-                                .foregroundStyle(Color.ovylSecondary)
+                                .foregroundStyle(Palette.textSecondary)
                         }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.title)
                             .font(.system(size: 13, weight: .medium))
                         Text(item.detail)
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.ovylSecondary)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                     .lineLimit(1)
                 }
                 .padding(7)
                 .padding(.trailing, 8)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ovylSurface))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.surface))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
                 .frame(maxWidth: 280, alignment: .trailing)
             }
             Text(message.text)
                 .font(.system(size: 14.5))
-                .foregroundStyle(.white)
+                .foregroundStyle(Palette.textPrimary)
                 .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.ovylAccent))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.accentSoft))
         }
         .padding(.leading, 36)
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -287,7 +297,10 @@ struct AssistantMessageView: View {
                 }
             }
             if message.text.isEmpty, isWriting {
-                ThinkingDots()
+                LogoLoader(.thinking)
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(.vertical, 2)
             }
             if !message.text.isEmpty {
                 MarkdownView(blocks: MarkdownDocument.parse(message.text))
@@ -297,7 +310,7 @@ struct AssistantMessageView: View {
             if let failure = message.failure {
                 Label(failure, systemImage: "exclamationmark.circle")
                     .font(.system(size: 13))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.danger)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -314,11 +327,11 @@ struct StepRow: View {
         HStack(spacing: 7) {
             Image(systemName: step.symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(step.changesLibrary ? Color.ovylAccent : Color.ovylSecondary)
+                .foregroundStyle(step.changesLibrary ? Palette.accentText : Palette.textSecondary)
                 .frame(width: 15)
             Text(step.summary)
                 .font(.system(size: 12.5))
-                .foregroundStyle(step.changesLibrary ? Color.primary.opacity(0.85) : Color.ovylSecondary)
+                .foregroundStyle(step.changesLibrary ? Palette.textPrimary.opacity(0.85) : Palette.textSecondary)
                 .strikethrough(step.undone)
                 .lineLimit(1)
             if step.changesLibrary {
@@ -329,7 +342,7 @@ struct StepRow: View {
                 if step.undone {
                     Text("Undone")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                 } else {
                     smallButton("Undo") { AssistantSession.shared.undo(step: step.id, in: messageID) }
                 }
@@ -339,8 +352,8 @@ struct StepRow: View {
         .padding(.vertical, step.changesLibrary ? 6 : 0)
         .background {
             if step.changesLibrary {
-                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.ovylSurface)
-                RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.surface)
+                RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5)
             }
         }
     }
@@ -351,27 +364,10 @@ struct StepRow: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .padding(.horizontal, 8)
                 .frame(height: 20)
-                .background(Capsule().fill(Color.ovylFill))
+                .background(Capsule().fill(Palette.fill))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-    }
-}
-
-/// Three dots that pulse while the answer is on its way.
-struct ThinkingDots: View {
-    var body: some View {
-        MotionClock(still: 0) { t in
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(Color.ovylSecondary)
-                        .frame(width: 6, height: 6)
-                        .opacity(0.35 + 0.65 * (0.5 + 0.5 * sin(t * 5 - Double(index) * 0.8)))
-                }
-            }
-            .padding(.vertical, 6)
-        }
     }
 }
 
@@ -388,11 +384,11 @@ struct RoundButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.primary.opacity(0.72))
+                .foregroundStyle(Palette.textPrimary.opacity(0.72))
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(isHovered ? Color.ovylFill : Color.ovylSurface))
-                .overlay(Circle().strokeBorder(Color.ovylBorder, lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.05), radius: 1.5, y: 0.5)
+                .background(Circle().fill(isHovered ? Palette.fill : Palette.surface))
+                .overlay(Circle().strokeBorder(Palette.border, lineWidth: 0.5))
+                .shadow(color: Palette.shadow, radius: 1.5, y: 0.5)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -414,17 +410,17 @@ struct SuggestionButton: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .frame(width: 16)
                 Text(text)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .foregroundStyle(Palette.textPrimary.opacity(0.85))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
             .frame(height: 34)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovered ? Color.ovylFill : Color.ovylSurface))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isHovered ? Palette.fill : Palette.surface))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -460,7 +456,7 @@ struct ModelMenu: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
             }
-            .foregroundStyle(Color.ovylSecondary)
+            .foregroundStyle(Palette.textSecondary)
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -486,7 +482,7 @@ struct ChatHistory: View {
             if chats.isEmpty {
                 Text("No earlier chats.")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(14)
             } else {
                 ScrollView {
@@ -526,7 +522,7 @@ struct ChatHistoryRow: View {
                     .lineLimit(1)
                 Text(chat.updatedAt.formatted(.relative(presentation: .named)))
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
             Spacer(minLength: 4)
             if isHovered {
@@ -534,13 +530,13 @@ struct ChatHistoryRow: View {
                     Image(systemName: "trash").font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .help("Delete this chat")
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(isHovered ? Color.ovylFill.opacity(0.6) : .clear)
+        .background(isHovered ? Palette.fill.opacity(0.6) : .clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture(perform: open)

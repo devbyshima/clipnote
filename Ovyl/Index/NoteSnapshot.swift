@@ -119,6 +119,10 @@ extension Note {
         }
     }
 
+    /// Whether the note has frames or pictures to browse: a video or
+    /// pictures have them; a recording or text doesn't.
+    var hasGallery: Bool { mediaKind == .video || mediaKind == .pictures }
+
     func snapshot(folderName: String?) -> NoteSnapshot {
         NoteSnapshot(
             id: id,

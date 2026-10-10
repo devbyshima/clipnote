@@ -96,13 +96,13 @@ final class Note {
 
     /// The note's text as Markdown: the edited text, or the text Ovyl wrote.
     var markdown: String {
-        editedMarkdown ?? NoteMarkdown.body(of: content ?? NoteContent())
+        editedMarkdown ?? NoteMarkdown.body(of: content ?? NoteContent(), source: mediaKind)
     }
 
     /// Keeps edited text, or goes back to Ovyl's text when it matches. A
     /// note of text always keeps its text.
     func setMarkdown(_ text: String) {
-        let generated = NoteMarkdown.body(of: content ?? NoteContent())
+        let generated = NoteMarkdown.body(of: content ?? NoteContent(), source: mediaKind)
         editedMarkdown = text == generated && kind != .text ? nil : text
         updatedAt = .now
         searchText = editedMarkdown.map(NoteMarkdown.plainText) ?? content?.plainText ?? ""

@@ -51,7 +51,7 @@ struct MotionTests {
             let frame = content
                 .environment(\.motionTime, t)
                 .frame(width: size.width, height: size.height)
-                .background(Color.ovylBG)
+                .background(Palette.background)
                 .environment(\.colorScheme, dark ? .dark : .light)
             let renderer = ImageRenderer(content: frame)
             renderer.scale = 2

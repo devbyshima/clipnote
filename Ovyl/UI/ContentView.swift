@@ -31,8 +31,8 @@ struct ContentView: View {
     private let startsEditing: Bool
     private let spring = Animation.spring(response: 0.3, dampingFraction: 0.86)
 
-    init(route: Route = .home, startsEditing: Bool = false, showsNoteInfo: Bool = false) {
-        _navigator = State(initialValue: Navigator(route, showsNoteInfo: showsNoteInfo))
+    init(route: Route = .home, history: [Route] = [], startsEditing: Bool = false, showsNoteInfo: Bool = false) {
+        _navigator = State(initialValue: Navigator(route, history: history, showsNoteInfo: showsNoteInfo))
         self.startsEditing = startsEditing
     }
 
@@ -76,7 +76,7 @@ struct ContentView: View {
         @Bindable var center = center
 
         ZStack {
-            Color.ovylBG.ignoresSafeArea()
+            Palette.background.ignoresSafeArea()
 
             GeometryReader { geo in
                 HStack(spacing: 0) {
@@ -301,22 +301,26 @@ struct ContentView: View {
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         let navigator = navigator
+        let center = center
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
             let plain = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
-            let handled = MainActor.assumeIsolated { Self.handleKey(key, plain: plain, navigator: navigator) }
+            let handled = MainActor.assumeIsolated { Self.handleKey(key, plain: plain, navigator: navigator, center: center) }
             return handled ? nil : event
         }
     }
 
-    private static func handleKey(_ key: String, plain: Bool, navigator: Navigator) -> Bool {
+    private static func handleKey(_ key: String, plain: Bool, navigator: Navigator, center: ProcessingCenter) -> Bool {
         guard plain,
               !(NSApp.keyWindow?.firstResponder is NSText),
               navigator.pendingDelete == nil,
               case .note(let id) = navigator.route
         else { return false }
         switch key {
-        case "f": navigator.go(.gallery(id))
+        case "f":
+            // Recordings and text have no frames to show.
+            guard center.note(with: id)?.hasGallery == true else { return false }
+            navigator.go(.gallery(id))
         case "i": navigator.go(.media(id, item: nil))
         case "d": navigator.pendingDelete = id
         default: return false
@@ -356,13 +360,13 @@ struct ContentView: View {
         return ZStack {
             Color.clear.frame(width: 12).contentShape(Rectangle())
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(active ? Color.ovylAccent.opacity(0.7) : Color.ovylBorder)
+                .fill(active ? Palette.accent : Palette.border)
                 .frame(width: active ? 3 : 1)
                 .frame(maxHeight: .infinity)
                 .ignoresSafeArea(edges: .top)
         }
         .frame(maxHeight: .infinity)
-        .background(Color.ovylBG.ignoresSafeArea(edges: .top))
+        .background(Palette.background.ignoresSafeArea(edges: .top))
         .animation(.easeOut(duration: 0.12), value: active)
         .onHover { inside in
             paneHandleHover = inside
@@ -404,19 +408,19 @@ struct ContentView: View {
 struct DropOverlay: View {
     var body: some View {
         ZStack {
-            Rectangle().fill(Color.ovylBG.opacity(0.85))
+            Rectangle().fill(Palette.background.opacity(0.85))
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.ovylAccent, style: StrokeStyle(lineWidth: 2, dash: [6, 6]))
+                .strokeBorder(Palette.accentText, style: StrokeStyle(lineWidth: 2, dash: [6, 6]))
                 .padding(18)
             VStack(spacing: 8) {
                 Image(systemName: "arrow.down.doc")
                     .font(.system(size: 34))
-                    .foregroundStyle(Color.ovylAccent)
+                    .foregroundStyle(Palette.accentText)
                 Text("Drop to make a note")
                     .font(.system(size: 20, weight: .semibold))
                 Text("Videos, audio, or pictures")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
         }
         .allowsHitTesting(false)

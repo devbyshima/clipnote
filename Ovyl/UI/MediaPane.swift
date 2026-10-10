@@ -89,7 +89,9 @@ struct MediaPane: View {
             }
             .overlay(alignment: .bottom) {
                 FloatingBar {
-                    BarButton(symbol: "square.grid.2x2", title: note.kind == .pictures ? "Pictures" : "Frames", key: "F") { navigator.go(.gallery(note.id)) }
+                    if note.hasGallery {
+                        BarButton(symbol: "square.grid.2x2", title: note.kind == .pictures ? "Pictures" : "Frames", key: "F") { navigator.go(.gallery(note.id)) }
+                    }
                     BarButton(symbol: "info.circle", title: "Info", key: "I") { navigator.go(.media(note.id, item: nil)) }
                     BarButton(symbol: "trash", title: "Delete", key: "D") { navigator.pendingDelete = note.id }
                 }
@@ -97,7 +99,7 @@ struct MediaPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylCanvas, ignoresSafeAreaEdges: .top)
+        .background(Palette.background, ignoresSafeAreaEdges: .top)
         .fileImporter(isPresented: $isLocating, allowedContentTypes: [.audiovisualContent]) { result in
             guard case .success(let url) = result else { return }
             let accessing = url.startAccessingSecurityScopedResource()
@@ -150,7 +152,7 @@ struct MediaPane: View {
             if let first = items.first {
                 Thumbnail(url: first.imageURL)
                     .aspectRatio(contentMode: .fit)
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+                    .shadow(color: Palette.shadow, radius: 10, y: 3)
                     .onTapGesture(count: 2) { navigator.go(.media(note.id, item: 0)) }
             } else {
                 EmptyState(symbol: "photo", title: "No pictures yet")
@@ -174,38 +176,46 @@ struct VideoHero: View {
                 VStack(spacing: 10) {
                     Image(systemName: note.mediaKind == .audio ? "waveform.slash" : "video.slash")
                         .font(.system(size: 24))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                     Text(note.mediaKind == .audio ? "Recording not found" : "Video not found")
                         .font(.system(size: 15, weight: .semibold))
                     Text("\(note.sourceName) was moved or deleted. The note is safe.")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .multilineTextAlignment(.center)
-                    FilledButton(title: "Locate…", action: locate)
+                    PlainCapsuleButton(title: "Locate…", action: locate)
                         .padding(.top, 4)
                 }
                 .padding(24)
                 .frame(maxWidth: 300)
-                .background(Color.ovylSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else if let avPlayer = player.player {
                 if player.hasVideo {
                     PlayerView(player: avPlayer)
                         .aspectRatio(player.aspectRatio ?? 16 / 9, contentMode: .fit)
-                        .background(.black)
+                        .background(Palette.media)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+                        // A hairline, so black video still has an edge on a black page.
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+                        .shadow(color: Palette.shadow, radius: 12, y: 4)
                 } else {
                     PlayerView(player: avPlayer)
                         .frame(height: 56)
                         .frame(maxWidth: 520)
-                        .background(.black)
+                        .background(Palette.media)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
                 }
             } else {
-                Color.black
+                Palette.media
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay { ProgressView().controlSize(.small).tint(.white) }
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+                    .overlay {
+                        LogoLoader(.loading)
+                            .frame(width: 30, height: 30)
+                            .foregroundStyle(Palette.onDark.opacity(0.85))
+                    }
             }
         }
         .task(id: note.id) { player.load(note) }
@@ -221,10 +231,10 @@ struct Thumbnail: View {
             Image(nsImage: image).resizable().interpolation(.high)
         } else {
             Rectangle()
-                .fill(Color.ovylFill)
+                .fill(Palette.fill)
                 .overlay {
                     Image(systemName: "photo")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
         }
     }

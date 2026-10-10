@@ -11,9 +11,24 @@ struct HomeEmptyState: View {
 
     var body: some View {
         EmptyCanvas(marks: .times(every: 30), still: 6.2) { grid, t, _ in
+            // Cards keep a width their lines fit in, even in small cells.
+            let card = CGSize(width: max(150, grid.cardFrame(column: 0, row: 0).width), height: 44)
+            // Each card with its remark under it, where they fit whole.
+            let placed = grid.place(Self.moments.map { moment in
+                let remark = Remark.size(moment.remark)
+                let isNote = moment.kind == .note
+                let body = isNote ? CGSize(width: 96, height: 116) : CGSize(width: card.width, height: 64)
+                return GridPiece(
+                    (moment.column, moment.row),
+                    size: CGSize(width: max(body.width, remark.width), height: body.height + 10 + remark.height),
+                    outset: EdgeInsets(top: isNote ? 6 : 0, leading: 0, bottom: 0, trailing: isNote ? 6 : 0)
+                )
+            })
             ZStack(alignment: .topLeading) {
                 ForEach(Array(Self.moments.enumerated()), id: \.offset) { index, moment in
-                    StoryMoment(moment: moment, frame: grid.cardFrame(column: moment.column, row: moment.row), time: Self.local(t, index: index))
+                    if let corner = placed[index] {
+                        StoryMoment(moment: moment, frame: CGRect(origin: corner, size: card), time: Self.local(t, index: index))
+                    }
                 }
             }
         } headline: { t in
@@ -136,11 +151,11 @@ struct VideoCard: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: 46, height: 30)
-                        .overlay(Color.black.opacity(0.22))
+                        .overlay(Palette.media.opacity(0.22))
                     Image(systemName: "play.fill")
                         .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.35), radius: 2)
+                        .foregroundStyle(Palette.onDark.opacity(0.95))
+                        .shadow(color: Palette.media.opacity(0.35), radius: 2)
                 }
                 .frame(width: 46, height: 30)
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
@@ -149,15 +164,15 @@ struct VideoCard: View {
                         .font(.system(size: 12.5, weight: .medium))
                     Text("17:30")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .monospacedDigit()
                 }
                 .lineLimit(1)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.08))
-                    Capsule().fill(Color.ovylAccent)
+                    Capsule().fill(Palette.surfaceSunken)
+                    Capsule().fill(Palette.goldGradient)
                         .frame(width: max(3, geo.size.width * progress))
                         .opacity(progress > 0 ? 1 : 0)
                 }
@@ -185,7 +200,7 @@ struct TranscriptCard: View {
                     HStack(spacing: 7) {
                         Text(stamp)
                             .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                            .foregroundStyle(Color.ovylSecondary)
+                            .foregroundStyle(Palette.textSecondary)
                         Text(text)
                             .font(.system(size: 11.5))
                     }
@@ -210,11 +225,11 @@ struct SlideCard: View {
         HStack(spacing: 10) {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5))
+                    .fill(Palette.textPrimary.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Palette.textPrimary.opacity(0.09), lineWidth: 0.5))
                 VStack(alignment: .leading, spacing: 4) {
                     Capsule()
-                        .fill(Color.primary.opacity(0.55))
+                        .fill(Palette.textPrimary.opacity(0.55))
                         .frame(width: 28, height: 4.5)
                         .padding(3)
                         .background(RoundedRectangle(cornerRadius: 2.5).fill(SceneColor.highlight.opacity(box)))
@@ -225,7 +240,7 @@ struct SlideCard: View {
                         )
                     ForEach([30.0, 38, 24], id: \.self) { width in
                         Capsule()
-                            .fill(Color.primary.opacity(0.2))
+                            .fill(Palette.textPrimary.opacity(0.2))
                             .frame(width: width, height: 2.5)
                             .padding(.leading, 3)
                     }
@@ -241,7 +256,7 @@ struct SlideCard: View {
                     .offset(x: -8 * (1 - read))
                 Text("slide · 9:34")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .opacity(read)
             }
             .lineLimit(1)
@@ -259,10 +274,10 @@ struct SongCard: View {
         let dim = Ease.out(Ease.progress(time, from: 1.35, over: 0.5))
         HStack(spacing: 9) {
             ZStack {
-                Circle().fill(Color.pink.gradient)
+                Circle().fill(LinearGradient(colors: [Palette.accent, Palette.ember], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Image(systemName: "music.note")
                     .font(.system(size: 7.5, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.onAccent)
             }
             .frame(width: 15, height: 15)
             VStack(alignment: .leading, spacing: 1) {
@@ -270,7 +285,7 @@ struct SongCard: View {
                     .font(.system(size: 12.5, weight: .medium))
                 Text("at 16:02")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .monospacedDigit()
             }
             .lineLimit(1)
@@ -313,10 +328,10 @@ struct FinishedNotePage: View {
         )
         .overlay(alignment: .topTrailing) {
             ZStack {
-                Circle().fill(Color.green.gradient)
+                Circle().fill(Palette.success)
                 Image(systemName: "checkmark")
                     .font(.system(size: 7, weight: .heavy))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.surface)
             }
             .frame(width: 15, height: 15)
             .scaleEffect(max(0, done))
@@ -341,7 +356,7 @@ struct Waveform: View {
                 let wobble = 0.5 + 0.5 * sin(time * 7 + i * 0.9)
                 let height = max(2.4, size.height * envelope * (0.35 + 0.65 * wobble) * level)
                 let rect = CGRect(x: CGFloat(index) * step, y: (size.height - height) / 2, width: 2.2, height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: 1.1), with: .color(Color.ovylSecondary))
+                context.fill(Path(roundedRect: rect, cornerRadius: 1.1), with: .color(Palette.textSecondary))
             }
         }
     }

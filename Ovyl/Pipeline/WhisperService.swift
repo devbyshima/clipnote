@@ -39,7 +39,10 @@ actor WhisperService {
     private var neuralFailed: String?
     private var hybridFailed: String?
     private var warmUp: Task<Void, Never>?
-    private var waiters: [CheckedContinuation<WhisperEngine, any Error>] = []
+    /// Counts each round of getting ready, so a load that finishes after
+    /// its round was called off can tell, and put itself away.
+    private var generation = 0
+    private var waiters: [UUID: CheckedContinuation<WhisperEngine, any Error>] = [:]
     private var inUse: [WhisperEngine.Compute: Int] = [:]
     private var idleUnload: Task<Void, Never>?
     private var phaseObservers: [UUID: AsyncStream<Phase>.Continuation] = [:]
@@ -98,6 +101,8 @@ actor WhisperService {
         guard warmUp == nil else { return }
         neuralFailed = nil
         hybridFailed = nil
+        generation += 1
+        let round = generation
         let expectCached = neuralEngineLikelyCached
         phase = .loading(firstTime: !expectCached)
         warmUp = Task {
@@ -106,25 +111,60 @@ actor WhisperService {
                 // bring up the hybrid so videos don't wait for the compile.
                 let fallback = Task {
                     try await Task.sleep(for: .seconds(8))
-                    await self.loadHybrid()
+                    await self.loadHybrid(round)
                 }
-                await loadNeuralEngine()
+                await loadNeuralEngine(round)
                 fallback.cancel()
             } else {
-                await loadHybrid()
-                await loadNeuralEngine()
+                await loadHybrid(round)
+                guard !Task.isCancelled else { return }
+                await loadNeuralEngine(round)
             }
         }
     }
 
     /// The fastest engine that's ready, waiting for the first one if needed.
+    /// Waiting ends as soon as the caller is cancelled, as when a note is
+    /// stopped while the model is still getting ready.
     func engine() async throws -> WhisperEngine {
         cancelIdleUnload()
         if neuralReady { return neuralEngine }
         if hybridReady { return hybrid }
         if warmUp == nil { prepare() }
         if let error = bothFailedError() { throw error }
-        return try await withCheckedThrowingContinuation { waiters.append($0) }
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Cancelled before this point, the handler below found nothing to end.
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[id] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
+    }
+
+    /// Stops getting the model ready when nothing is waiting for it, so
+    /// stopping a note stops its model activation too. A load under way
+    /// can't be interrupted; it finishes out of sight, keeps Core ML's
+    /// compiled cache for next time, and is put away.
+    func standDown() {
+        guard warmUp != nil, waiters.isEmpty, !neuralReady else { return }
+        warmUp?.cancel()
+        warmUp = nil
+        generation += 1
+        if hybridReady, inUse[.hybrid, default: 0] == 0 {
+            hybridReady = false
+            Task { await hybrid.unload() }
+        }
+        phase = .idle
     }
 
     /// Detects the spoken language from the first stretch of speech.
@@ -161,31 +201,43 @@ actor WhisperService {
 
     // MARK: Loading
 
-    private func loadNeuralEngine() async {
+    private func loadNeuralEngine(_ round: Int) async {
+        guard round == generation else { return }
         do {
             try await neuralEngine.prepare()
+            guard round == generation else {
+                // Called off while it loaded: keep the compile, free the memory.
+                defaults.set(compiledStamp, forKey: compiledKey)
+                if warmUp == nil { await neuralEngine.unload() }
+                return
+            }
             neuralReady = true
             defaults.set(compiledStamp, forKey: compiledKey)
             phase = .ready
             resumeWaiters(with: neuralEngine)
             await unloadHybridIfIdle()
         } catch {
+            guard round == generation else { return }
             neuralFailed = error.localizedDescription
             if hybridReady {
                 // The hybrid keeps working; try the Neural Engine again next launch.
                 phase = .ready
             } else if hybridFailed == nil {
-                await loadHybrid()
+                await loadHybrid(round)
             } else {
                 failAll()
             }
         }
     }
 
-    private func loadHybrid() async {
-        guard !neuralReady, !hybridReady else { return }
+    private func loadHybrid(_ round: Int) async {
+        guard round == generation, !neuralReady, !hybridReady else { return }
         do {
             try await hybrid.prepare()
+            guard round == generation else {
+                if warmUp == nil { await hybrid.unload() }
+                return
+            }
             hybridReady = true
             if neuralReady {
                 await unloadHybridIfIdle()
@@ -194,14 +246,15 @@ actor WhisperService {
                 resumeWaiters(with: hybrid)
             }
         } catch {
+            guard round == generation else { return }
             hybridFailed = error.localizedDescription
             if neuralFailed != nil { failAll() }
         }
     }
 
     private func resumeWaiters(with engine: WhisperEngine) {
-        let pending = waiters
-        waiters = []
+        let pending = waiters.values
+        waiters = [:]
         for waiter in pending { waiter.resume(returning: engine) }
     }
 
@@ -213,8 +266,8 @@ actor WhisperService {
     private func failAll() {
         let message = neuralFailed ?? hybridFailed ?? "Whisper couldn't load."
         phase = .failed(message)
-        let pending = waiters
-        waiters = []
+        let pending = waiters.values
+        waiters = [:]
         for waiter in pending { waiter.resume(throwing: WhisperServiceError.unavailable(message)) }
         warmUp = nil
     }

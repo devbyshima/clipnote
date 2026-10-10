@@ -73,7 +73,7 @@ struct MarkdownEditor: NSViewRepresentable {
         view.isContinuousSpellCheckingEnabled = true
         view.isGrammarCheckingEnabled = false
         view.isAutomaticTextCompletionEnabled = false
-        view.insertionPointColor = .ovylAccent
+        view.insertionPointColor = Palette.NS.accentText
         view.delegate = context.coordinator
         view.controller = controller
         controller?.textView = view
@@ -262,13 +262,13 @@ struct FormatBar: View {
         }
         .padding(.horizontal, 5)
         .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ovylSurface))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
+        .shadow(color: Palette.shadow, radius: 10, y: 3)
     }
 
     private var separator: some View {
-        Rectangle().fill(Color.ovylBorder).frame(width: 1, height: 18).padding(.horizontal, 4)
+        Rectangle().fill(Palette.border).frame(width: 1, height: 18).padding(.horizontal, 4)
     }
 
     private func button(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
@@ -293,9 +293,9 @@ private struct FormatButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label
-                .foregroundStyle(Color.primary.opacity(0.8))
+                .foregroundStyle(Palette.textPrimary.opacity(0.8))
                 .frame(width: 30, height: 28)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isHovered ? Color.ovylFill : .clear))
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isHovered ? Palette.fill : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -311,7 +311,7 @@ struct MarkdownHighlighter {
     let style: ReaderStyle
 
     var baseAttributes: [NSAttributedString.Key: Any] {
-        [.font: NSFont.ovyl(style.size, serif: style.serif), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
+        [.font: NSFont.ovyl(style.size, serif: style.serif), .foregroundColor: Palette.NS.textPrimary, .paragraphStyle: paragraph]
     }
 
     private var paragraph: NSParagraphStyle {
@@ -379,7 +379,7 @@ struct MarkdownHighlighter {
                 } else {
                     openFence = marker
                 }
-                storage.addAttributes(codeAttributes(color: .ovylFaint), range: lineRange)
+                storage.addAttributes(codeAttributes(color: Palette.NS.faint), range: lineRange)
                 return
             }
             if openFence != nil {
@@ -412,7 +412,7 @@ struct MarkdownHighlighter {
         [
             .font: NSFont.systemFont(ofSize: style.size * 0.9, weight: .medium),
             .foregroundColor: color,
-            .backgroundColor: NSColor.ovylCodeBG,
+            .backgroundColor: Palette.NS.surfaceSunken,
         ]
     }
 
@@ -423,14 +423,14 @@ struct MarkdownHighlighter {
         func syntax(_ range: NSRange) {
             guard range.length > 0 else { return }
             if revealed {
-                storage.addAttribute(.foregroundColor, value: NSColor.ovylFaint, range: absolute(range))
+                storage.addAttribute(.foregroundColor, value: Palette.NS.faint, range: absolute(range))
             } else {
                 storage.addAttributes(Self.hidden, range: absolute(range))
             }
         }
 
         if Self.rule.firstMatch(in: line, range: all) != nil {
-            storage.addAttribute(.foregroundColor, value: NSColor.ovylFaint, range: absolute(all))
+            storage.addAttribute(.foregroundColor, value: Palette.NS.faint, range: absolute(all))
             return
         }
         if let match = Self.heading.firstMatch(in: line, range: all) {
@@ -447,7 +447,7 @@ struct MarkdownHighlighter {
         if let match = Self.quotePrefix.firstMatch(in: line, range: all) {
             start = match.range.length
             if revealed {
-                storage.addAttribute(.foregroundColor, value: NSColor.ovylAccent, range: absolute(match.range))
+                storage.addAttribute(.foregroundColor, value: Palette.NS.textSecondary, range: absolute(match.range))
             } else {
                 // Away from the caret a quote reads as an indented block.
                 syntax(match.range)
@@ -457,14 +457,14 @@ struct MarkdownHighlighter {
             if let callout = Self.calloutMarker.firstMatch(in: line, range: rest) {
                 if revealed {
                     storage.addAttributes([
-                        .foregroundColor: NSColor.ovylAccent,
+                        .foregroundColor: Palette.NS.textSecondary,
                         .font: NSFont.ovyl(style.size * 0.85, weight: .semibold),
                     ], range: absolute(callout.range))
                 } else {
                     syntax(callout.range)
                     let title = NSRange(location: NSMaxRange(callout.range), length: ns.length - NSMaxRange(callout.range))
                     storage.addAttributes([
-                        .foregroundColor: NSColor.ovylAccent,
+                        .foregroundColor: Palette.NS.textPrimary,
                         .font: NSFont.ovyl(style.size, weight: .semibold, serif: style.serif),
                     ], range: absolute(title))
                 }
@@ -473,12 +473,12 @@ struct MarkdownHighlighter {
         }
         let rest = NSRange(location: start, length: ns.length - start)
         if let match = Self.listMarker.firstMatch(in: line, range: rest) {
-            storage.addAttribute(.foregroundColor, value: NSColor.ovylSecondary, range: absolute(match.range))
+            storage.addAttribute(.foregroundColor, value: Palette.NS.textSecondary, range: absolute(match.range))
             let box = match.range(at: 1)
             if box.location != NSNotFound, ns.substring(with: box).lowercased() == "[x]" {
                 let after = NSRange(location: NSMaxRange(match.range), length: ns.length - NSMaxRange(match.range))
                 storage.addAttributes([
-                    .foregroundColor: NSColor.ovylSecondary,
+                    .foregroundColor: Palette.NS.textSecondary,
                     .strikethroughStyle: NSUnderlineStyle.single.rawValue,
                 ], range: absolute(after))
             }
@@ -498,7 +498,7 @@ struct MarkdownHighlighter {
         func syntax(_ r: NSRange) {
             guard r.length > 0 else { return }
             if revealed {
-                storage.addAttribute(.foregroundColor, value: NSColor.ovylFaint, range: absolute(r))
+                storage.addAttribute(.foregroundColor, value: Palette.NS.faint, range: absolute(r))
             } else {
                 storage.addAttributes(Self.hidden, range: absolute(r))
             }
@@ -525,14 +525,14 @@ struct MarkdownHighlighter {
             markers(of: match, inner: 1)
         }
         for match in Self.mark.matches(in: line, range: range) {
-            storage.addAttribute(.backgroundColor, value: NSColor.ovylHighlight, range: absolute(match.range(at: 1)))
+            storage.addAttribute(.backgroundColor, value: Palette.NS.highlight, range: absolute(match.range(at: 1)))
             markers(of: match, inner: 1)
         }
         for match in Self.link.matches(in: line, range: range) {
             let label = match.range(at: 1)
             let target = ns.substring(with: match.range(at: 2))
             markers(of: match, inner: 1)
-            var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.ovylAccent]
+            var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: Palette.NS.accentText]
             if target.hasPrefix("#t=") {
                 attributes[.font] = NSFont.monospacedDigitSystemFont(ofSize: size * 0.9, weight: .medium)
             }
@@ -540,7 +540,7 @@ struct MarkdownHighlighter {
         }
         for match in Self.wikilink.matches(in: line, range: range) {
             markers(of: match, inner: 1)
-            storage.addAttribute(.foregroundColor, value: NSColor.ovylAccent, range: absolute(match.range(at: 1)))
+            storage.addAttribute(.foregroundColor, value: Palette.NS.accentText, range: absolute(match.range(at: 1)))
         }
         for match in Self.code.matches(in: line, range: range) {
             let inner = NSRange(location: match.range.location + 1, length: match.range.length - 2)

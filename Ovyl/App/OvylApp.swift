@@ -15,6 +15,7 @@ struct OvylApp: App {
         Window("Ovyl", id: "main") {
             ContentView()
                 .environment(center)
+                .tint(Palette.accentText)
                 .frame(minWidth: 900, minHeight: 540)
         }
         .modelContainer(center.container)
@@ -25,6 +26,7 @@ struct OvylApp: App {
         Settings {
             SettingsView()
                 .environment(center)
+                .tint(Palette.accentText)
         }
     }
 }

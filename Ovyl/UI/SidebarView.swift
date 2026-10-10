@@ -58,12 +58,12 @@ struct SidebarView: View {
                     HStack {
                         Text("Folders")
                             .font(.system(size: 12.5))
-                            .foregroundStyle(Color.ovylSecondary)
+                            .foregroundStyle(Palette.textSecondary)
                         Spacer()
                         Button { center.createFolder() } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 14, weight: .regular))
-                                .foregroundStyle(Color.primary.opacity(0.6))
+                                .foregroundStyle(Palette.textPrimary.opacity(0.6))
                                 .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
                         }
@@ -78,7 +78,7 @@ struct SidebarView: View {
                     if folders.isEmpty {
                         Text("Make a folder, then drag notes onto it.")
                             .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
@@ -93,9 +93,9 @@ struct SidebarView: View {
             ModelStatusRow()
         }
         .frame(width: Self.width)
-        .background(Color.ovylSidebar, ignoresSafeAreaEdges: .top)
+        .background(Palette.background, ignoresSafeAreaEdges: .top)
         .overlay(alignment: .trailing) {
-            Rectangle().fill(Color.ovylBorder).frame(width: 1).ignoresSafeArea(edges: .top)
+            Rectangle().fill(Palette.border).frame(width: 1).ignoresSafeArea(edges: .top)
         }
     }
 
@@ -110,17 +110,17 @@ struct SidebarView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(color ?? Color.primary.opacity(0.7))
+                    .foregroundStyle(color ?? Palette.textPrimary.opacity(0.7))
                     .frame(width: 20)
                 Text(title)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let count {
                     Text("\(count)")
                         .font(.system(size: 12.5).monospacedDigit())
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
             }
             .padding(.horizontal, 10)
@@ -162,7 +162,7 @@ struct SidebarView: View {
             Spacer(minLength: 4)
             Text("\(count)")
                 .font(.system(size: 12.5).monospacedDigit())
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
@@ -203,9 +203,9 @@ struct RowBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(selected ? Color.ovylFill
-                : targeted ? Color.ovylAccent.opacity(0.18)
-                : isHovered ? Color.ovylFill.opacity(0.55) : .clear)
+            .fill(selected ? Palette.fill
+                : targeted ? Palette.accentSoft
+                : isHovered ? Palette.fill.opacity(0.55) : .clear)
             .onHover { isHovered = $0 }
             .animation(.easeOut(duration: 0.1), value: isHovered)
     }
@@ -262,11 +262,11 @@ struct ModelStatusRow: View {
             SettingsLink {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(0.72))
+                    .foregroundStyle(Palette.textPrimary.opacity(0.72))
                     .frame(width: 42, height: 30)
-                    .background(Capsule(style: .continuous).fill(Color.ovylSurface))
-                    .overlay(Capsule(style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.05), radius: 1.5, y: 0.5)
+                    .background(Capsule(style: .continuous).fill(Palette.surface))
+                    .overlay(Capsule(style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
+                    .shadow(color: Palette.shadow, radius: 1.5, y: 0.5)
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -278,19 +278,21 @@ struct ModelStatusRow: View {
                     if status.isProblem {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning)
                     } else {
-                        ProgressView().controlSize(.mini)
+                        LogoLoader(.preparing)
+                            .frame(width: 14, height: 14)
+                            .foregroundStyle(Palette.textPrimary.opacity(0.7))
                     }
                     Text(status.label)
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.ovylSecondary)
+                        .foregroundStyle(Palette.textSecondary)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(Capsule(style: .continuous).fill(Color.ovylSurface))
-                .overlay(Capsule(style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+                .background(Capsule(style: .continuous).fill(Palette.surface))
+                .overlay(Capsule(style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
                 .help(status.help)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }

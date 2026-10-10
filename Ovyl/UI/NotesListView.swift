@@ -45,9 +45,9 @@ struct NotesListView: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(folder.color)
                         }
+                        // Counts stay in the sidebar; the title is just the name.
                         Text(title)
                             .font(.system(size: 14, weight: .medium))
-                        CountBadge(count: notes.count)
                     }
                 }
             } trailing: {
@@ -57,7 +57,6 @@ struct NotesListView: View {
                         toggleSearch()
                     }
                     .keyboardShortcut("f", modifiers: .command)
-                    PillButton(symbol: "plus", help: "New note from a video, audio or pictures (⌘N)", action: onNew)
                 }
                 if query.isEmpty, !(notes.isEmpty && folders.isEmpty) {
                     PillGroup { HomeView(hasFolders: folder == nil && !folders.isEmpty) }
@@ -67,7 +66,7 @@ struct NotesListView: View {
             list
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.ovylBG)
+        .background(Palette.background)
         .task(id: query) {
             guard !query.isEmpty else {
                 matches = []
@@ -98,13 +97,13 @@ struct NotesListView: View {
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Palette.textSecondary)
             }
         }
         .padding(.horizontal, 12)
         .frame(width: 240, height: 30)
-        .background(Capsule(style: .continuous).fill(Color.ovylSurface))
-        .overlay(Capsule(style: .continuous).strokeBorder(Color.ovylBorder, lineWidth: 0.5))
+        .background(Capsule(style: .continuous).fill(Palette.surface))
+        .overlay(Capsule(style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
     }
 
     private func toggleSearch() {
@@ -133,7 +132,7 @@ struct NotesListView: View {
                         Text("\(results.count)")
                     }
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .padding(.horizontal, 30)
                     .padding(.top, 18)
                     .padding(.bottom, 8)
@@ -204,7 +203,7 @@ struct NoteListRow: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.ovylSecondary)
+                    .foregroundStyle(Palette.textSecondary)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
@@ -215,7 +214,7 @@ struct NoteListRow: View {
         }
         .padding(.horizontal, 30)
         .padding(.vertical, 10)
-        .background(isLastOpened ? Color.ovylSelection : (isHovered ? Color.ovylFill.opacity(0.5) : .clear))
+        .background(isLastOpened ? Palette.accentSoft : (isHovered ? Palette.fill.opacity(0.5) : .clear))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { navigator.go(.note(note.id)) }
@@ -232,26 +231,32 @@ struct NoteListRow: View {
         switch note.status {
         case .processing:
             HStack(spacing: 8) {
-                ProgressView(value: note.progress)
+                LogoLoader(LogoMotion(note: note))
+                    .frame(width: 15, height: 15)
+                GoldProgressBar(value: note.progress, height: 4)
                     .frame(width: 70)
                 Text(note.stage.isEmpty ? "Working" : note.stage)
                     .lineLimit(1)
             }
             .font(.system(size: 12))
-            .foregroundStyle(Color.ovylSecondary)
+            .foregroundStyle(Palette.textSecondary)
         case .queued:
-            Text("Waiting")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.ovylSecondary)
+            HStack(spacing: 8) {
+                LogoLoader(.waiting)
+                    .frame(width: 15, height: 15)
+                Text("Waiting")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.textSecondary)
         case .failed:
             Label(note.errorMessage ?? "Couldn't make this note", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.danger)
                 .lineLimit(1)
         case .ready:
             Text(caption)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.ovylSecondary)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(1)
         }
     }
@@ -291,14 +296,14 @@ struct MatchSnippet: View {
     var body: some View {
         Text(line)
             .font(.system(size: 12))
-            .foregroundStyle(Color.ovylSecondary)
+            .foregroundStyle(Palette.textSecondary)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private var line: AttributedString {
         var placeText = AttributedString(place)
-        placeText.foregroundColor = Color.ovylAccent
+        placeText.foregroundColor = Palette.accentText
         return placeText + Self.marked(hit.snippet)
     }
 
@@ -321,8 +326,8 @@ struct MatchSnippet: View {
             guard !current.isEmpty else { return }
             var piece = AttributedString(current)
             if inside {
-                piece.foregroundColor = .primary
-                piece.backgroundColor = Color.ovylHighlight
+                piece.foregroundColor = Palette.textPrimary
+                piece.backgroundColor = Palette.highlight
             }
             result += piece
             current = ""
@@ -356,7 +361,7 @@ struct NoteDrag: ViewModifier {
                     .font(.system(size: 13, weight: .medium))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Color.ovylSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         } else {
             content

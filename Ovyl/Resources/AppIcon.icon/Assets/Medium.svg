@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="28.366" y1="26.330" x2="36.854" y2="32.230"><stop offset="0" stop-color="#47474C" stop-opacity="1"/><stop offset="0.35" stop-color="#232325" stop-opacity="1"/><stop offset="0.75" stop-color="#121213" stop-opacity="1"/><stop offset="1" stop-color="#0A0A0B" stop-opacity="1"/></linearGradient>
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="28.366" y1="26.330" x2="36.854" y2="32.230"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.5"/><stop offset="0.14" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.72" stop-color="#FFB443" stop-opacity="0"/><stop offset="1" stop-color="#FFB443" stop-opacity="0.8"/></linearGradient>
+    <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="28.366" y1="26.330" x2="36.854" y2="32.230"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.0"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.0"/></linearGradient>
+    <clipPath id="inside"><path d="M41.4,15.17C40.31,15.17 38.8,15.87 37.13,17.16C34.29,19.39 31.08,23.05 27.6,27.84C23.25,33.85 20.96,38.81 20.96,41.61C20.96,43.41 21.75,44.3 22.97,44.3C24.4,44.3 26.51,43.17 28.77,41.22C32.08,38.3 35.67,34.09 38.78,28.93C41.88,23.93 43.39,19.99 43.39,17.79C43.39,16.08 42.64,15.17 41.4,15.17Z"/></clipPath>
+  </defs>
+  <g transform="matrix(16.8 0 0 16.8 84.80 79.98)">
+    <path d="M41.4,15.17C40.31,15.17 38.8,15.87 37.13,17.16C34.29,19.39 31.08,23.05 27.6,27.84C23.25,33.85 20.96,38.81 20.96,41.61C20.96,43.41 21.75,44.3 22.97,44.3C24.4,44.3 26.51,43.17 28.77,41.22C32.08,38.3 35.67,34.09 38.78,28.93C41.88,23.93 43.39,19.99 43.39,17.79C43.39,16.08 42.64,15.17 41.4,15.17Z" fill="url(#body)"/>
+    <path d="M41.4,15.17C40.31,15.17 38.8,15.87 37.13,17.16C34.29,19.39 31.08,23.05 27.6,27.84C23.25,33.85 20.96,38.81 20.96,41.61C20.96,43.41 21.75,44.3 22.97,44.3C24.4,44.3 26.51,43.17 28.77,41.22C32.08,38.3 35.67,34.09 38.78,28.93C41.88,23.93 43.39,19.99 43.39,17.79C43.39,16.08 42.64,15.17 41.4,15.17Z" fill="url(#sheen)"/>
+    <path d="M41.4,15.17C40.31,15.17 38.8,15.87 37.13,17.16C34.29,19.39 31.08,23.05 27.6,27.84C23.25,33.85 20.96,38.81 20.96,41.61C20.96,43.41 21.75,44.3 22.97,44.3C24.4,44.3 26.51,43.17 28.77,41.22C32.08,38.3 35.67,34.09 38.78,28.93C41.88,23.93 43.39,19.99 43.39,17.79C43.39,16.08 42.64,15.17 41.4,15.17Z" fill="none" stroke="url(#rim)" stroke-width="1.3" clip-path="url(#inside)"/>
+  </g>
+</svg>
