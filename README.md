@@ -45,6 +45,7 @@ Ovyl uses Gold & Graphite, taken from the app icon, and follows the system's lig
 - **Shimmer** (lime, mint, ice) only appears in gradients: the gold progress bar and the ring around the app mark in the assistant.
 - **Status colors** stay apart from gold: green for done, red-orange for warnings, red for failures.
 - **Folders keep the colors you pick** with the color flower.
+- **Settings is a standard Mac settings window:** toolbar tabs, labels and controls in two columns on the window's own background, and the system's controls and accent color. The window keeps its width and takes each tab's height.
 
 ## The logo
 
@@ -99,7 +100,7 @@ Settings › Storage shows what each part takes, and clears the caches or the sp
   - without speech, short text that keeps changing in one place is the captions, and becomes the note's text;
   - everything else is grouped into moments: slides (with a frame grab) and remarks (a line or two that isn't said).
 - **Pictures:** each picture is read with Vision's document reader, which keeps paragraphs, lists, and tables.
-- **Formatting:** the language model only writes the title, summary, key points, and headings. The transcript is never reworded. Without Apple Intelligence, notes still get slide titles as headings and a title from the opening slide or the file name.
+- **Formatting:** off until it's turned on in Settings › Formatting. The language model only writes the title, summary, key points, and headings. The transcript is never reworded. When it's off, or without Apple Intelligence, notes still get slide titles as headings and a title from the opening slide or the file name.
 
 ## Performance
 

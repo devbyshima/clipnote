@@ -6,7 +6,7 @@ struct SettingsView: View {
     @AppStorage(PipelineOptions.languageKey) private var language = ""
     @AppStorage(PipelineOptions.readsScreenTextKey) private var readsScreenText = true
     @AppStorage(PipelineOptions.frameIntervalKey) private var frameInterval = 1.0
-    @AppStorage(PipelineOptions.smartFormattingKey) private var smartFormatting = true
+    @AppStorage(PipelineOptions.smartFormattingKey) private var smartFormatting = false
     @AppStorage(PipelineOptions.skipsMusicKey) private var skipsMusic = true
     @State private var apiKey = AnthropicKey.value ?? ""
     @State private var keySaved = AnthropicKey.isSet
@@ -19,6 +19,10 @@ struct SettingsView: View {
         "en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "fi", "pl", "cs", "ro", "hu", "el",
         "ru", "uk", "tr", "ar", "he", "fa", "hi", "bn", "ur", "ja", "ko", "zh", "vi", "th", "id", "ms",
     ]
+
+    /// Every tab is this wide, so the window keeps its width and only its
+    /// height follows the tab.
+    private static let width: CGFloat = 520
 
     /// The tab last shown, so Settings opens where it was left.
     @AppStorage("settingsTab") private var tab = SettingsTab.speech
@@ -35,7 +39,6 @@ struct SettingsView: View {
             Tab("Assistant", systemImage: "sparkles", value: SettingsTab.assistant) { page { assistantSettings } }
             Tab("Storage", systemImage: "internaldrive", value: SettingsTab.storage) { page { storageSettings } }
         }
-        .frame(width: 560)
         .task { await storage.measure() }
         .confirmationDialog("Clear the speech model build?", isPresented: $confirmsSpeechClear) {
             Button("Clear", role: .destructive) { Task { await storage.clearSpeechCache() } }
@@ -44,122 +47,120 @@ struct SettingsView: View {
         }
     }
 
-    /// A tab's settings as a grouped form on the app's background, as tall
-    /// as its contents.
+    /// A tab as a Mac settings pane: labels on the left, controls on the
+    /// right, on the window's own background, and exactly as tall as its
+    /// contents so the window fits it.
     private func page(@ViewBuilder _ content: () -> some View) -> some View {
         Form { content() }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .background(Palette.background)
+            .formStyle(.columns)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
+            .frame(width: Self.width)
             .fixedSize(horizontal: false, vertical: true)
+            .background(SettingsWindowStyler())
     }
 
     @ViewBuilder private var speech: some View {
         Section {
-            Picker("Engine", selection: $engine) {
+            Picker("Engine:", selection: $engine) {
                 ForEach(EnginePreference.allCases) { Text($0.label).tag($0.rawValue) }
             }
-            Picker("Spoken language", selection: $language) {
+            .fixedSize()
+            SettingsNote(engineFootnote)
+            Picker("Spoken language:", selection: $language) {
                 Text("Detect automatically").tag("")
                 Divider()
                 ForEach(sortedLanguages, id: \.code) { item in
                     Text(item.name).tag(item.code)
                 }
             }
-            Toggle("Leave out songs and music", isOn: $skipsMusic)
-                .tint(Palette.accent)
-                .help("Singing and music are recognized on this Mac and marked in the note instead of transcribed. Talking over background music is still transcribed.")
-        } footer: {
-            Text(engineFootnote).foregroundStyle(Palette.textSecondary)
+            .fixedSize()
+            LabeledContent("Music:") {
+                Toggle("Leave out songs and music", isOn: $skipsMusic)
+            }
+            SettingsNote("Singing and music are recognized on this Mac and marked in the note instead of transcribed. Talking over background music is still transcribed.")
         }
+        Divider()
         Section {
-            LabeledContent("Whisper model") {
-                Text(whisperStatus).foregroundStyle(Palette.textSecondary)
-            }
-            LabeledContent("Apple Speech") {
-                Text(AppleSpeechEngine.isAvailable ? "Available" : "Not available on this Mac")
-                    .foregroundStyle(Palette.textSecondary)
-            }
-        } header: {
-            Text("Engines")
+            LabeledContent("Whisper model:", value: whisperStatus)
+            LabeledContent("Apple Speech:", value: AppleSpeechEngine.isAvailable ? "Available" : "Not available on this Mac")
         }
     }
 
     @ViewBuilder private var screenText: some View {
-        Section {
+        LabeledContent("Screen text:") {
             Toggle("Read text that appears on screen", isOn: $readsScreenText)
-                .tint(Palette.accent)
-            Picker("Check the screen", selection: $frameInterval) {
-                Text("Every half second").tag(0.5)
-                Text("Every second").tag(1.0)
-                Text("Every 2 seconds").tag(2.0)
-            }
-            .disabled(!readsScreenText)
-        } footer: {
-            Text("Subtitles that repeat the speech appear once: the transcript, or the subtitles where speech was unclear. Without speech, captions become the note's text.")
-                .foregroundStyle(Palette.textSecondary)
         }
+        Picker("Check the screen:", selection: $frameInterval) {
+            Text("Every half second").tag(0.5)
+            Text("Every second").tag(1.0)
+            Text("Every 2 seconds").tag(2.0)
+        }
+        .fixedSize()
+        .disabled(!readsScreenText)
+        SettingsNote("Subtitles that repeat the speech appear once: the transcript, or the subtitles where speech was unclear. Without speech, captions become the note's text.")
     }
 
     @ViewBuilder private var formatting: some View {
-        Section {
-            Toggle("Smart formatting with Apple Intelligence", isOn: $smartFormatting)
-                .tint(Palette.accent)
-        } footer: {
-            Text(formattingFootnote).foregroundStyle(Palette.textSecondary)
+        LabeledContent("Smart formatting:") {
+            Toggle("Write titles and summaries with Apple Intelligence", isOn: $smartFormatting)
         }
+        SettingsNote(formattingFootnote)
     }
 
     @ViewBuilder private var assistantSettings: some View {
-        Section {
-            Picker("Model", selection: Binding(get: { assistant.model }, set: { assistant.model = $0 })) {
-                ForEach(AssistantModel.allCases) { Text($0.label).tag($0) }
-            }
-            LabeledContent("Anthropic API key") {
-                HStack(spacing: 8) {
-                    SecureField("sk-ant-…", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 220)
-                        .onSubmit(saveKey)
-                    Button(keySaved && apiKey == (AnthropicKey.value ?? "") ? "Saved" : "Save", action: saveKey)
-                        .disabled(keySaved && apiKey == (AnthropicKey.value ?? ""))
-                }
-            }
-        } footer: {
-            Text("\(assistant.model.privacy) The key is only needed for Claude and is kept in your keychain.")
-                .foregroundStyle(Palette.textSecondary)
+        Picker("Model:", selection: Binding(get: { assistant.model }, set: { assistant.model = $0 })) {
+            ForEach(AssistantModel.allCases) { Text($0.label).tag($0) }
         }
+        .fixedSize()
+        SettingsNote(assistant.model.privacy)
+        LabeledContent("Anthropic API key:") {
+            HStack(spacing: 8) {
+                SecureField("Anthropic API key", text: $apiKey, prompt: Text("sk-ant-…"))
+                    .labelsHidden()
+                    .frame(width: 200)
+                    .onSubmit(saveKey)
+                Button(keyIsCurrent ? "Saved" : "Save", action: saveKey)
+                    .disabled(keyIsCurrent)
+            }
+        }
+        SettingsNote("Only needed for Claude. It's kept in your keychain.")
     }
 
     @ViewBuilder private var storageSettings: some View {
         Section {
-            StorageRow(title: "Notes", bytes: storage.usage.notes)
-            StorageRow(title: "Frames and pictures", bytes: storage.usage.frames)
-            StorageRow(title: "Assistant chats", bytes: storage.usage.chats)
-            StorageRow(title: "Search index", bytes: storage.usage.index)
-            StorageRow(title: "Speech model, built for this Mac", bytes: storage.usage.speechCache)
-            StorageRow(title: "Temporary files", bytes: storage.usage.temporary)
-            HStack {
-                Button("Clear Caches") {
-                    Task { await storage.clearCaches(center) }
-                }
-                .help("Empties the search index and temporary files. The index is rebuilt right away.")
-                Button("Clear Speech Model Build…") { confirmsSpeechClear = true }
-                    .disabled(storage.usage.speechCache == 0)
-                Spacer()
-                Text("Total \(StorageRow.format(storage.usage.total))")
-                    .foregroundStyle(Palette.textSecondary)
+            StorageRow(title: "Notes:", bytes: storage.usage.notes)
+            StorageRow(title: "Frames and pictures:", bytes: storage.usage.frames)
+            StorageRow(title: "Assistant chats:", bytes: storage.usage.chats)
+            StorageRow(title: "Search index:", bytes: storage.usage.index)
+            StorageRow(title: "Speech model build:", bytes: storage.usage.speechCache)
+            StorageRow(title: "Temporary files:", bytes: storage.usage.temporary)
+            LabeledContent("Total:") {
+                Text(StorageRow.format(storage.usage.total)).fontWeight(.semibold).monospacedDigit()
             }
-        } footer: {
-            Text("Ovyl never copies your videos, audio or pictures; notes point to them where they are. Frames of deleted notes and old temporary files are cleaned up on their own.")
-                .foregroundStyle(Palette.textSecondary)
         }
         Section {
-            Label("Videos, audio, pictures, transcripts and notes are made on this Mac. Only when the assistant uses Claude or Apple's Private Cloud is what it reads sent out.", systemImage: "lock.fill")
-                .foregroundStyle(Palette.textSecondary)
-        } header: {
-            Text("Privacy")
+            LabeledContent("Clean up:") {
+                HStack(spacing: 8) {
+                    Button("Clear Caches") {
+                        Task { await storage.clearCaches(center) }
+                    }
+                    .help("Empties the search index and temporary files. The index is rebuilt right away.")
+                    Button("Clear Speech Model Build…") { confirmsSpeechClear = true }
+                        .disabled(storage.usage.speechCache == 0)
+                }
+            }
+            SettingsNote("Ovyl never copies your videos, audio or pictures; notes point to them where they are. Frames of deleted notes and old temporary files are cleaned up on their own.")
         }
+        Divider()
+        LabeledContent("Privacy:") {
+            Text("Videos, audio, pictures, transcripts and notes are made on this Mac. Only when the assistant uses Claude or Apple's Private Cloud is what it reads sent out.")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var keyIsCurrent: Bool {
+        keySaved && apiKey == (AnthropicKey.value ?? "")
     }
 
     private func saveKey() {
@@ -198,10 +199,24 @@ struct SettingsView: View {
     private var formattingFootnote: String {
         switch SmartFormatter.availability {
         case .available:
-            "Writes the title, summary, key points, and section headings on this Mac. The transcript itself is never reworded."
+            "Writes the title, summary, key points, and section headings on this Mac. The transcript itself is never reworded. When it's off, notes use slide titles and the file name for headings."
         case .unavailable(let reason):
             "\(reason) Until then, notes use slide titles and the file name for headings."
         }
+    }
+}
+
+/// Small explanatory text under a setting, in the controls' column.
+private struct SettingsNote: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -212,7 +227,7 @@ struct StorageRow: View {
 
     var body: some View {
         LabeledContent(title) {
-            Text(Self.format(bytes)).foregroundStyle(Palette.textSecondary).monospacedDigit()
+            Text(Self.format(bytes)).monospacedDigit()
         }
     }
 

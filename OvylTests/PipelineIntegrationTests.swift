@@ -76,6 +76,7 @@ struct PipelineIntegrationTests {
         try #require(SmartFormatter.availability == .available, "Apple Intelligence isn't available on this Mac")
         var options = PipelineOptions()
         options.engine = .whisper
+        options.smartFormatting = true
         let result = try await run(options)
         #expect(result.content.formattedWithAI)
         #expect(result.content.summary?.isEmpty == false)

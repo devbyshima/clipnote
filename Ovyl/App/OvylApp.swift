@@ -26,7 +26,6 @@ struct OvylApp: App {
         Settings {
             SettingsView()
                 .environment(center)
-                .tint(Palette.accentText)
         }
     }
 }

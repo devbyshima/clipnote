@@ -133,3 +133,76 @@ struct WindowDragHandle: NSViewRepresentable {
         }
     }
 }
+
+/// Keeps keyboard focus off the Settings toolbar. With keyboard navigation
+/// on, AppKit hands focus to the first tab whenever a tab's controls leave the
+/// window, and the tab then wears a focus ring in the shape of its symbol. The
+/// tabs refuse focus, and if one gets it anyway the window takes it back, so
+/// Tab moves through the open tab's controls.
+struct SettingsWindowStyler: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowObserver()
+        let coordinator = context.coordinator
+        view.onWindow = { coordinator.attach(to: $0) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.attach(to: nsView.window)
+    }
+
+    private final class WindowObserver: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindow?(window)
+        }
+    }
+
+    /// Checks on every window update, since focus moves after the new tab's
+    /// controls are in place, and the toolbar's buttons can be made again.
+    @MainActor
+    final class Coordinator: NSObject {
+        private weak var window: NSWindow?
+
+        func attach(to window: NSWindow?) {
+            guard let window else { return }
+            if window !== self.window {
+                self.window = window
+                NotificationCenter.default.addObserver(self, selector: #selector(reapply(_:)), name: NSWindow.didUpdateNotification, object: window)
+            }
+            apply(window)
+        }
+
+        @objc private func reapply(_ note: Notification) {
+            if let window = note.object as? NSWindow { apply(window) }
+        }
+
+        private func apply(_ window: NSWindow) {
+            guard let contentView = window.contentView, let frameView = contentView.superview else { return }
+            var toolbarViews: [NSView] = []
+            collect(frameView, into: &toolbarViews, skipping: contentView, window: window)
+            for case let control as NSControl in toolbarViews where !control.refusesFirstResponder {
+                control.refusesFirstResponder = true
+            }
+            if let responder = window.firstResponder as? NSView,
+               toolbarViews.contains(where: { responder === $0 || responder.isDescendant(of: $0) }) {
+                window.makeFirstResponder(nil)
+            }
+        }
+
+        /// The views outside the content view that could hold focus, leaving
+        /// out the traffic lights.
+        private func collect(_ view: NSView, into result: inout [NSView], skipping: NSView, window: NSWindow) {
+            if view === skipping { return }
+            if view.acceptsFirstResponder || view is NSControl,
+               ![NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].contains(where: { window.standardWindowButton($0) === view }) {
+                result.append(view)
+            }
+            view.subviews.forEach { collect($0, into: &result, skipping: skipping, window: window) }
+        }
+    }
+}

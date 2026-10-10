@@ -24,7 +24,8 @@ nonisolated struct PipelineOptions: Sendable {
     var language: String?
     var readsScreenText = true
     var frameInterval: TimeInterval = 1
-    var smartFormatting = true
+    /// Off until turned on in Settings › Formatting.
+    var smartFormatting = false
     /// Leaves songs and other music out of the transcript.
     var skipsMusic = true
 
@@ -43,7 +44,7 @@ nonisolated struct PipelineOptions: Sendable {
         options.readsScreenText = defaults.object(forKey: readsScreenTextKey) as? Bool ?? true
         let interval = defaults.double(forKey: frameIntervalKey)
         options.frameInterval = interval > 0 ? interval : 1
-        options.smartFormatting = defaults.object(forKey: smartFormattingKey) as? Bool ?? true
+        options.smartFormatting = defaults.object(forKey: smartFormattingKey) as? Bool ?? false
         options.skipsMusic = defaults.object(forKey: skipsMusicKey) as? Bool ?? true
         return options
     }
