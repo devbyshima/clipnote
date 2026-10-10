@@ -273,6 +273,8 @@ struct EmptyHeadline<Art: View>: View {
     var trail: String = "."
     let message: String
     var action: (title: String, run: () -> Void)?
+    /// What the action's button says on hover.
+    var actionHelp: String?
     let t: Double
     @ViewBuilder var art: Art
 
@@ -301,7 +303,7 @@ struct EmptyHeadline<Art: View>: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
             if let action {
-                WideButton(title: action.title, action: action.run)
+                WideButton(title: action.title, help: actionHelp, action: action.run)
                     .padding(.top, 26)
             }
         }
@@ -321,7 +323,9 @@ struct EmptyHeadline<Art: View>: View {
                 }
                 Handwriting(text: written, size: writtenSize * scale, progress: Ease.progress(t, from: 0.55, over: min(1.2, 0.3 + Double(written.count) * 0.09)))
                 if !trail.isEmpty {
+                    // A hair of space, so the period clears the word's last stroke.
                     Text(trail).font(.system(size: 30 * scale, weight: .semibold))
+                        .padding(.leading, 2 * scale)
                 }
             }
             .padding(.top, 2 * scale)
@@ -331,14 +335,15 @@ struct EmptyHeadline<Art: View>: View {
 }
 
 extension EmptyHeadline where Art == EmptyView {
-    init(first: String, lead: String = "", written: String, trail: String = ".", message: String, action: (title: String, run: () -> Void)? = nil, t: Double) {
-        self.init(first: first, lead: lead, written: written, trail: trail, message: message, action: action, t: t) { EmptyView() }
+    init(first: String, lead: String = "", written: String, trail: String = ".", message: String, action: (title: String, run: () -> Void)? = nil, actionHelp: String? = nil, t: Double) {
+        self.init(first: first, lead: lead, written: written, trail: trail, message: message, action: action, actionHelp: actionHelp, t: t) { EmptyView() }
     }
 }
 
 /// The wide button under a headline: the screen's one gold action.
 struct WideButton: View {
     let title: String
+    var help: String?
     let action: () -> Void
     @State private var isHovered = false
 
@@ -355,7 +360,7 @@ struct WideButton: View {
         .focusEffectDisabled()
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
-        .help("New note from a video or pictures (⌘N)")
+        .help(help ?? "")
     }
 }
 

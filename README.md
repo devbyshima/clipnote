@@ -18,7 +18,7 @@ Notes are made on the Mac. The only network use is the assistant, when it's set 
 - **Middle:** Home as cards: the folders as colored folder cards with a sheet showing for each note inside, and the notes outside them as cards with their title, the start of their text and the day. Cards fill columns as they fit; a note with text stands twice as tall. A folder's dots bring up a pill to rename, color or delete it; its color button opens a color flower (twelve bright colors around six pastels and white). Drop notes on a folder card to file them. A folder shows its notes the same way. The view menu switches between the messy grid, an even grid and a list (with the cards as thumbnails), sorts by date made, date edited or title either way, or by hand: drag cards or rows into any order (each page keeps its own), and drop a note on a folder to file it. It can put folders first and hide note text; the slider at the bottom sizes the cards, smallest at first. Or the open note. A note opens in reader mode with just its title and text, with a Sans or Serif choice and a text size at the bottom. Edit (⌘E) edits its Markdown, showing the syntax only on the line being edited; selecting text brings up a formatting bar, and ⌘B, ⌘I and ⌘K work. Copy copies the note as Markdown. Timestamps in the note are links that play the video from that moment.
 - **Right:** the note's video on a dotted canvas, with Frames (F), Info (I) and Delete (D) under it; recordings have no frames, so they have no Frames button. Frames moves the frames grabbed from on-screen text into the middle as a grid; Info moves the video into the middle and shows its details on the right. The note's Info button shows its details and summary on the right instead. Every view in the right pane starts with its way out: Back when it opened from something (the details go back to the note or the frames, the note's info back to its video), Close when it's the pane's first view. Back and forward (⌘[ and ⌘]) work everywhere.
 
-The empty states (a new Home, an empty folder, a search with no results, a video with no text on screen) fit any pane: cards and their handwritten remarks only appear where they fit whole, the headline steps down in size for narrow panes, and the whole scene grows on large displays.
+The empty states (a new Home, an empty folder, a search with no results, a video with no text on screen, and a video or recording that was moved, with a way to locate it) fit any pane: cards and their handwritten remarks only appear where they fit whole, the headline steps down in size for narrow panes, and the whole scene grows on large displays.
 
 Both side panes slide away (⌘. for the left, ⌘P for the right), and the right one resizes by dragging its edge. New notes go into the folder you're looking at. ⌘N or ⌘O makes a note, ⇧⌘N makes a folder.
 
@@ -58,15 +58,15 @@ While Ovyl works, the mark comes apart into simple shapes, acts out what's happe
 | Waiting | a note queued behind another | sway gently, one after another, and settle |
 | Preparing | the speech model getting ready (in the sidebar and on a note) | pull into dots that circle the middle like a turning wheel |
 | Listening | the audio being read and listened to for music | stand up as sound levels and keep bouncing |
-| Transcribing | speech becoming text | stand up as sound levels, bounce, then tip over into lines of text |
-| Reading | on-screen text and pictures being read | the large stroke sweeps across as a scanner, lines of text growing behind it |
-| Writing | the note being written | lie down as lines written one after another, then fold into a page |
+| Transcribing | speech becoming text | sound levels that bounce, tip over into lines of text, and stand back up to listen |
+| Reading | on-screen text and pictures being read | a scanner sweeps across and back, lines of text growing behind it and drawing in again |
+| Writing | the note being written | lines written one after another, folded into a page, and opened out to write again |
 | Thinking | the assistant before it answers | round into dots that hop in turn |
-| Failed | a note that couldn't be made | wobble, tumble into a heap, and pull themselves back up |
+| Failed | a note that couldn't be made | wobble and tumble into a heap, where they stay, the ball now and then trying a hop |
 
 Each motion has one purpose and is never borrowed for another. A note's motion follows its stage, matched to the pipeline's own step names.
 
-Every move is a spring, and each new move is added on top of the springs still running instead of starting from rest, so pieces carry their speed from one pose into the next and round the loop; beats can overlap, and nothing stops dead. Pieces travel in arcs, stretch along the way they move and squash as they set off and land; bars and lines that grow in place stay rigid. Each piece shrinks to a dot before the dots gather where the strokes stand, and the strokes grow out of them, so no stroke sweeps across another. Switching stage mid-motion carries on at the same speed into the mark, then the new motion. Frames are drawn off the main thread and cost about 25 µs each. With Reduce Motion the mark stays whole and breathes.
+A loader starts as the mark, turns into its own form, and stays in it, looping, until what it's waiting for is done; it never goes back to the mark. Switching stage carries the pieces on at the speed they're going, straight into the next loader. Every move is a spring, and each new move is added on top of the springs still running instead of starting from rest, so pieces carry their speed from one pose into the next and round the loop; beats can overlap, and nothing stops dead. Pieces travel in arcs, stretch along the way they move and squash as they set off and land; bars and lines that grow in place stay rigid. Frames are drawn off the main thread and cost about 25 µs each. With Reduce Motion the mark stays whole and breathes.
 
 ## Storage
 

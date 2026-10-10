@@ -164,85 +164,110 @@ struct LogoHandoff {
     var rate: [LogoPiece]
 }
 
-/// A loop of beats. The first is always the logo, so a motion starts from
-/// the mark, and any motion can hand over to another through it.
+/// A motion in three parts: the mark, held a moment; an intro that turns
+/// it into the loader's form; and the loader's loop, which repeats for as
+/// long as it's shown and never goes back to the mark. Taking over from
+/// another motion skips the mark and goes straight from where the pieces
+/// are into this one's form.
 struct LogoScript {
     static let pieces = 5
-    let beats: [Beat]
-    private let starts: [Double]
-    /// Which pieces change shape in each beat, from the one before.
-    private let reshapes: [[Bool]]
-    let lap: Double
+    let mark: Beat
+    let intro: [Beat]
+    let loop: [Beat]
+    private let loopStarts: [Double]
+    let loopLap: Double
+    /// The longest any move takes to settle, past which it's folded in.
+    private let settle: Double
+    private let fresh: Line
+    private let continuing: Line
 
-    /// Every loop but the conveyor ends by pulling each piece into a dot
-    /// where it is, then gathering the dots where the strokes stand, the
-    /// last piece first so none runs into another; the strokes then grow
-    /// out of them, as the reference's shapes grow out of dots. Swinging
-    /// the long stroke in from anywhere else would sweep it across the
-    /// others.
-    init(_ beats: [Beat], gathers: Bool = true) {
-        var beats = beats.map { beat in
+    /// The beats before the loop, and when each sets off.
+    private struct Line {
+        let beats: [Beat]
+        let starts: [Double]
+        let length: Double
+
+        init(_ beats: [Beat]) {
+            self.beats = beats
+            var starts: [Double] = []
+            var total = 0.0
+            for beat in beats {
+                starts.append(total)
+                total += beat.duration
+            }
+            self.starts = starts
+            length = total
+        }
+    }
+
+    init(mark: Beat, intro: [Beat] = [], loop: [Beat]) {
+        func padded(_ beat: Beat) -> Beat {
             var beat = beat
             while beat.pose.count < Self.pieces { beat.pose.append(.hidden) }
             return beat
         }
-        if gathers, let last = beats.last {
-            let sizes: [CGFloat] = [11, 8, 5.8, 5.8, 5.8]
-            let dots = last.pose.enumerated().map { index, piece in
-                LogoPiece(outline: .circle(sizes[index]), center: piece.center, angle: piece.angle, scale: piece.scale)
-            }
-            beats.append(Beat(pose: dots, response: 0.3, damping: 0.8, stagger: 0.03, reversed: true, duration: 0.18))
-            beats.append(Beat(pose: LogoPiece.gathered + [.hidden, .hidden], response: 0.42, damping: 0.78, stagger: 0.07, reversed: true, duration: 0.44))
-        }
-        self.beats = beats
-        reshapes = beats.indices.map { index in
-            let before = beats[(index + beats.count - 1) % beats.count].pose
-            return zip(before, beats[index].pose).map { $0.outline != $1.outline }
-        }
-        var starts: [Double] = []
-        var total = 0.0
-        for beat in self.beats {
-            starts.append(total)
-            total += beat.duration
-        }
-        self.starts = starts
-        lap = total
+        self.mark = padded(mark)
+        self.intro = intro.map(padded)
+        self.loop = loop.map(padded)
+        let line = Line(self.loop)
+        loopStarts = line.starts
+        loopLap = line.length
+        fresh = Line([self.mark] + self.intro)
+        continuing = Line(self.intro)
+        settle = ([self.mark] + self.intro + self.loop).map(\.settle).max() ?? 1
     }
 
-    /// The pieces `time` seconds in: the pose a lap back, which has long
-    /// settled, plus every move since, each as far along its own spring as
-    /// it has got. The first lap starts from `handoff`, carrying its speed,
-    /// or else from the logo standing still.
+    /// How long until the loop starts, shown from the mark.
+    var introLength: Double { fresh.length }
+
+    private func event(_ index: Int, on line: Line) -> (beat: Beat, at: Double) {
+        if index < line.beats.count { return (line.beats[index], line.starts[index]) }
+        let step = index - line.beats.count
+        let position = step % loop.count
+        return (loop[position], line.length + Double(step / loop.count) * loopLap + loopStarts[position])
+    }
+
+    private func current(at time: Double, on line: Line) -> Int {
+        if time < line.length { return line.starts.lastIndex { $0 <= time } ?? 0 }
+        let local = time - line.length
+        let laps = (local / loopLap).rounded(.down)
+        let position = loopStarts.lastIndex { $0 <= local - laps * loopLap } ?? 0
+        return line.beats.count + Int(laps) * loop.count + position
+    }
+
+    /// The pieces `time` seconds in: the last pose long settled, plus every
+    /// move since, each as far along its own spring as it has got. Shown
+    /// fresh, it starts from the mark standing still; taking over, from
+    /// `handoff`, carrying its speed.
     func pose(at time: Double, from handoff: LogoHandoff? = nil) -> [LogoPiece] {
         let time = max(0, time)
-        let count = beats.count
-        let laps = (time / lap).rounded(.down)
-        let index = starts.lastIndex { $0 <= time - laps * lap } ?? 0
-        let current = Int(laps) * count + index
-        let first = max(0, current - count + 1)
-        let start = handoff?.pose ?? beats[0].pose
-        var pieces = first == 0 ? start : beats[(first - 1) % count].pose
-        // Moves that have long settled, in an unbroken run from the oldest,
-        // are folded into the pose they reached.
-        var folding = true
-        for event in first...current {
-            let beat = beats[event % count]
-            let at = Double(event / count) * lap + starts[event % count]
-            if folding, time - at > beat.settle {
-                pieces = beat.pose
-                continue
-            }
-            folding = false
-            let before = event == 0 ? start : beats[(event - 1) % count].pose
-            let reshape = event == 0 && handoff != nil ? nil : reshapes[event % count]
-            for piece in pieces.indices {
-                let t = time - at - beat.delay(piece)
-                guard t > 0 else { continue }
-                let form = reshape?[piece] == false ? 0 : beat.form(t)
-                pieces[piece].move(from: before[piece], to: beat.pose[piece], motion: beat.motion(t), form: form, lift: beat.lift)
+        let line = handoff == nil ? fresh : continuing
+        let start = handoff?.pose ?? mark.pose
+        let now = current(at: time, on: line)
+        // Back to the newest move that has long settled; everything before
+        // it has too, so the pose starts from where it ended.
+        var first = now
+        while first > 0, time - event(first, on: line).at <= settle { first -= 1 }
+        var pieces: [LogoPiece]
+        if time - event(first, on: line).at > settle {
+            pieces = event(first, on: line).beat.pose
+            first += 1
+        } else {
+            pieces = start
+        }
+        if first <= now {
+            for index in first...now {
+                let (beat, at) = event(index, on: line)
+                let before = index == 0 ? start : event(index - 1, on: line).beat.pose
+                for piece in pieces.indices {
+                    let t = time - at - beat.delay(piece)
+                    guard t > 0 else { continue }
+                    let form = before[piece].outline == beat.pose[piece].outline ? 0 : beat.form(t)
+                    pieces[piece].move(from: before[piece], to: beat.pose[piece], motion: beat.motion(t), form: form, lift: beat.lift)
+                }
             }
         }
-        if let handoff, time < lap {
+        if let handoff, time < 3 {
             let flick = LogoSpring.flick(time, response: 0.5, damping: 0.8)
             for piece in pieces.indices {
                 pieces[piece].add(handoff.rate[piece], times: flick)
@@ -301,12 +326,6 @@ extension LogoPiece {
     /// The ground the logo's strokes stand on.
     static let ground: CGFloat = 44.3
 
-    /// Dots where the strokes stand, turned as they are, ready to stretch
-    /// into them.
-    static let gathered = [11.0, 8.0, 5.8].enumerated().map { index, size in
-        LogoPiece(outline: .circle(size), center: logo[index].center, angle: logo[index].angle)
-    }
-
     /// Shrunk to nothing at `point`.
     static func gone(at point: CGPoint) -> LogoPiece {
         LogoPiece(outline: .circle(6), center: point, scale: 0)
@@ -346,50 +365,59 @@ extension LogoPiece {
 extension LogoScript {
     static let logo = [LogoPiece.large, .medium, .small]
 
-    /// The strokes stretching out of the gathered dots into the mark, which
-    /// holds for a moment.
-    private static func mark(_ duration: Double = 1.05) -> Beat {
-        Beat(pose: logo, response: 0.5, damping: 0.62, stagger: 0.07, duration: duration)
+    /// The mark, held a moment before it becomes a loader.
+    private static func mark(_ duration: Double = 0.6) -> Beat {
+        Beat(pose: logo, response: 0.5, damping: 0.7, stagger: 0.07, duration: duration)
     }
 
     /// Text lines, top to bottom, around the logo's middle.
     private static let rows: [CGFloat] = [12.6, 22.6, 32.6]
-
-    /// Media opening: the strokes flow left one place at a time, hopping a little: the
-    /// largest shrinks away, the others grow into the place ahead, and a
-    /// new one grows in on the right. Each move sets off before the last
-    /// has settled, so the mark is always whole and never still.
-    static let loading = LogoScript((0..<5).map { shift in
-        Beat(
-            pose: (0..<5).map { piece in LogoPiece.conveyor(((piece - shift) % 5 + 5) % 5) },
-            response: 0.62,
-            damping: 0.8,
-            stagger: 0.07,
-            // The leaving stroke first, the newcomer last.
-            order: (0..<5).map { piece in ((piece - shift + 1) % 5 + 5) % 5 },
-            lift: 0.12,
-            duration: 0.62
-        )
-    }, gathers: false)
 
     /// Three sound levels, left to right, leaning by `lean`.
     private static func bars(_ heights: [CGFloat], lean: Double = 0) -> [LogoPiece] {
         [.bar(12, height: heights[0], lean: lean), .bar(24, height: heights[1], lean: lean), .bar(36, height: heights[2], lean: lean)]
     }
 
+    /// Levels that rise and fall like speech, never quite repeating within a loop.
+    private static let levels: [[CGFloat]] = [
+        [16, 34, 24], [30, 14, 36], [20, 28, 12], [34, 18, 26], [14, 30, 20], [26, 22, 32],
+        [18, 36, 14], [32, 16, 28], [22, 26, 34], [12, 32, 18],
+    ]
+
+    /// Media opening: the strokes flow left one place at a time, hopping a
+    /// little: the largest shrinks away, the others grow into the place
+    /// ahead, and a new one grows in on the right. Each move sets off
+    /// before the last has settled, so the mark is always whole and never
+    /// still.
+    static let loading = LogoScript(
+        mark: mark(0.4),
+        loop: [1, 2, 3, 4, 5].map { shift in
+            Beat(
+                pose: (0..<5).map { piece in LogoPiece.conveyor(((piece - shift) % 5 + 5) % 5) },
+                response: 0.62,
+                damping: 0.8,
+                stagger: 0.08,
+                // The leaving stroke first, the newcomer last.
+                order: (0..<5).map { piece in ((piece - shift + 1) % 5 + 5) % 5 },
+                lift: 0.12,
+                duration: 0.8
+            )
+        }
+    )
+
     /// A note waiting its turn: the mark sways gently, one stroke after
-    /// another, as if shifting its weight in a line, and settles.
+    /// another, as if shifting its weight in a line.
     static let waiting: LogoScript = {
         func lean(_ by: Double) -> [LogoPiece] { logo.map { var piece = $0; piece.angle += by; return piece } }
-        return LogoScript([
-            Beat(pose: logo, response: 0.9, damping: 0.62, stagger: 0.14, duration: 1.3),
-            Beat(pose: lean(0.16), response: 0.95, damping: 0.6, stagger: 0.14, duration: 1.05),
-            Beat(pose: lean(-0.09), response: 0.95, damping: 0.6, stagger: 0.14, duration: 0.95),
-        ], gathers: false)
+        return LogoScript(mark: mark(0.8), loop: [
+            Beat(pose: lean(0.16), response: 1.0, damping: 0.62, stagger: 0.16, duration: 1.4),
+            Beat(pose: lean(-0.09), response: 1.0, damping: 0.62, stagger: 0.16, duration: 1.3),
+            Beat(pose: lean(0.04), response: 1.0, damping: 0.62, stagger: 0.16, duration: 1.2),
+        ])
     }()
 
     /// The speech model getting ready: the strokes pull into dots that
-    /// circle the middle twice, like a wheel turning over, then come back.
+    /// circle the middle like a wheel turning over, for as long as it takes.
     static let preparing: LogoScript = {
         func wheel(_ turn: Double) -> [LogoPiece] {
             [9.0, 7.5, 6.0].enumerated().map { index, size in
@@ -399,89 +427,97 @@ extension LogoScript {
         }
         // Eighths of a turn, each set off before the last arrives, so the
         // dots run round smoothly instead of corner to corner.
-        let turning = (1...16).map { step in
-            Beat(pose: wheel(Double(step) / 8), response: 0.34, damping: 0.92, stagger: 0, duration: 0.16)
-        }
         return LogoScript(
-            [mark(0.9), Beat(pose: wheel(0), response: 0.45, damping: 0.8, stagger: 0.06, duration: 0.45)]
-                + turning
-                + [Beat(pose: wheel(2), response: 0.4, damping: 0.85, stagger: 0, duration: 0.3)]
+            mark: mark(),
+            intro: [Beat(pose: wheel(0), response: 0.5, damping: 0.8, stagger: 0.06, duration: 0.5)],
+            loop: (1...8).map { step in
+                Beat(pose: wheel(Double(step) / 8), response: 0.4, damping: 0.92, stagger: 0, duration: 0.22)
+            }
         )
     }()
 
-    /// The audio being heard: the strokes stand up as sound levels and
-    /// keep bouncing, before any words come of it.
-    static let listening: LogoScript = {
-        let levels: [[CGFloat]] = [[16, 34, 24], [30, 14, 36], [20, 28, 12], [34, 18, 26], [14, 30, 20], [26, 22, 32], [18, 36, 14], [32, 16, 28]]
-        return LogoScript(
-            [mark(), Beat(pose: bars([30, 20, 12]), response: 0.44, damping: 0.74, stagger: 0.06, duration: 0.34)]
-                + levels.map { Beat(pose: bars($0), response: 0.26, damping: 0.52, stagger: 0.03, duration: 0.16) }
-                + [Beat(pose: bars([30, 20, 12]), response: 0.36, damping: 0.7, stagger: 0.04, duration: 0.45)]
-        )
-    }()
+    /// The audio being heard: the strokes stand up as sound levels and keep
+    /// bouncing for as long as it lasts.
+    static let listening = LogoScript(
+        mark: mark(),
+        intro: [Beat(pose: bars([30, 20, 12]), response: 0.46, damping: 0.74, stagger: 0.06, duration: 0.4)],
+        loop: levels.map { Beat(pose: bars($0), response: 0.3, damping: 0.55, stagger: 0.035, duration: 0.2) }
+    )
 
     /// Speech becoming text: the strokes stand up as sound levels and
-    /// bounce, lean back, then tip over into lines of text.
-    static let transcribing: LogoScript = {
-        let levels: [[CGFloat]] = [[16, 34, 24], [30, 14, 36], [20, 28, 12], [34, 18, 26], [14, 30, 20], [26, 22, 32]]
-        return LogoScript(
-            [mark(), Beat(pose: bars([30, 20, 12]), response: 0.44, damping: 0.74, stagger: 0.06, duration: 0.34)]
-                + levels.map { Beat(pose: bars($0), response: 0.26, damping: 0.52, stagger: 0.03, duration: 0.16) }
-                + [
-                    Beat(pose: bars([26, 22, 16], lean: -0.2), response: 0.24, damping: 0.7, stagger: 0.03, duration: 0.17),
-                    // One after another, like dominoes, each clear of the next.
-                    Beat(pose: [.line(rows[0], length: 33), .line(rows[1], length: 33), .line(rows[2], length: 19)], response: 0.5, damping: 0.72, stagger: 0.15, lift: 0.15, duration: 1.4),
-                ]
-        )
-    }()
+    /// bounce, lean back, tip over into lines of text, and stand back up to
+    /// listen again.
+    static let transcribing = LogoScript(
+        mark: mark(),
+        intro: [Beat(pose: bars([30, 20, 12]), response: 0.46, damping: 0.74, stagger: 0.06, duration: 0.4)],
+        loop: levels.prefix(7).map { Beat(pose: bars($0), response: 0.3, damping: 0.55, stagger: 0.035, duration: 0.2) }
+            + [
+                Beat(pose: bars([26, 22, 16], lean: -0.2), response: 0.26, damping: 0.7, stagger: 0.03, duration: 0.2),
+                // One after another, like dominoes, each clear of the next.
+                Beat(pose: [.line(rows[0], length: 33), .line(rows[1], length: 33), .line(rows[2], length: 19)], response: 0.52, damping: 0.72, stagger: 0.15, lift: 0.15, duration: 1.7),
+                // Back up again, the last line first.
+                Beat(pose: bars([28, 22, 16]), response: 0.5, damping: 0.72, stagger: 0.12, reversed: true, lift: 0.1, duration: 0.6),
+            ]
+    )
 
-    /// A scanner grows up on the left and sweeps across; the strokes, as
-    /// dots, grow into lines of text behind it as it passes, and it shrinks
-    /// away on the right.
+    /// Text on screen being read: a scanner sweeps across and lines of text
+    /// grow behind it, then it sweeps back and they're read again.
     static let reading: LogoScript = {
         let scanner = LogoOutline.capsule(5, 40)
         let lines: [LogoPiece] = [.line(rows[0], length: 28, left: 9.75), .line(rows[1], length: 22, left: 9.75), .line(rows[2], length: 26, left: 9.75)]
+        let dots = rows.map { LogoPiece.dot(13, $0, size: 6.5, angle: .pi / 2) }
+        let left = LogoPiece(outline: scanner, center: CGPoint(x: 6, y: 22.6))
+        let right = LogoPiece(outline: scanner, center: CGPoint(x: 42, y: 22.6))
         var start = mark()
         start.pose += [.gone(at: CGPoint(x: 6, y: 22.6))]
-        return LogoScript([
-            start,
-            Beat(
-                pose: rows.map { LogoPiece.dot(13, $0, size: 6.5, angle: .pi / 2) } + [LogoPiece(outline: scanner, center: CGPoint(x: 6, y: 22.6))],
-                response: 0.44, damping: 0.76, stagger: 0.05, duration: 0.42
-            ),
-            // The scanner leads; each line follows a moment behind it.
-            Beat(pose: lines + [LogoPiece(outline: scanner, center: CGPoint(x: 42, y: 22.6))], response: 0.95, damping: 0.92, stagger: 0.07, order: [1, 2, 3, 0, 4], duration: 1.0),
-            Beat(pose: lines + [.gone(at: CGPoint(x: 42, y: 22.6))], response: 0.32, damping: 0.8, duration: 0.75),
-        ])
+        return LogoScript(
+            mark: start,
+            intro: [Beat(pose: dots + [left], response: 0.46, damping: 0.76, stagger: 0.05, duration: 0.5)],
+            loop: [
+                // The scanner leads; each line follows a moment behind it.
+                Beat(pose: lines + [right], response: 1.0, damping: 0.92, stagger: 0.07, order: [1, 2, 3, 0, 4], duration: 1.3),
+                Beat(pose: lines + [right], duration: 0.6),
+                // Back across, the lines drawing in behind it, to read again.
+                Beat(pose: dots + [left], response: 1.0, damping: 0.92, stagger: 0.07, order: [1, 2, 3, 0, 4], duration: 1.4),
+            ]
+        )
     }()
 
-    /// The strokes lie down as lines written one after another, the lines
-    /// fold into a page, and the page splits back into the mark.
-    static let writing = LogoScript([
-        mark(),
-        Beat(pose: rows.map { LogoPiece.dot(11, $0, size: 6.5, angle: .pi / 2) }, response: 0.42, damping: 0.76, stagger: 0.05, duration: 0.32),
-        Beat(pose: [.line(rows[0], length: 32), .line(rows[1], length: 27), .line(rows[2], length: 17)], response: 0.6, damping: 0.88, stagger: 0.3, duration: 1.45),
-        Beat(
-            pose: Array(repeating: LogoPiece(outline: .rect(33, 27, radius: 4.5), center: CGPoint(x: 24, y: 23), angle: .pi / 2, elasticity: 0), count: 3),
-            response: 0.48, damping: 0.72, stagger: 0.03, reversed: true, duration: 0.95
-        ),
-    ])
+    /// The note being written: lines written one after another, folded into
+    /// a page, and the page opened back out to write again.
+    static let writing: LogoScript = {
+        let dots = rows.map { LogoPiece.dot(11, $0, size: 6.5, angle: .pi / 2) }
+        return LogoScript(
+            mark: mark(),
+            intro: [Beat(pose: dots, response: 0.44, damping: 0.76, stagger: 0.05, duration: 0.45)],
+            loop: [
+                Beat(pose: [.line(rows[0], length: 32), .line(rows[1], length: 27), .line(rows[2], length: 17)], response: 0.62, damping: 0.88, stagger: 0.32, duration: 1.7),
+                Beat(
+                    pose: Array(repeating: LogoPiece(outline: .rect(33, 27, radius: 4.5), center: CGPoint(x: 24, y: 23), angle: .pi / 2, elasticity: 0), count: 3),
+                    response: 0.5, damping: 0.72, stagger: 0.03, reversed: true, duration: 1.2
+                ),
+                Beat(pose: dots, response: 0.46, damping: 0.78, stagger: 0.06, duration: 0.6),
+            ]
+        )
+    }()
 
-    /// The strokes round into dots that hop one after another, three times.
+    /// The assistant working on an answer: dots that hop one after another,
+    /// then rest, again and again.
     static let thinking: LogoScript = {
         func dots(_ y: CGFloat) -> [LogoPiece] { [.dot(12, y), .dot(24, y), .dot(36, y)] }
-        let hop = [
-            Beat(pose: dots(15), response: 0.34, damping: 0.62, stagger: 0.11, duration: 0.2),
-            Beat(pose: dots(24), response: 0.34, damping: 0.62, stagger: 0.11, duration: 0.34),
-        ]
-        var beats = [mark(1.0), Beat(pose: dots(24), response: 0.4, damping: 0.76, stagger: 0.05, duration: 0.4)] + hop + hop + hop
-        beats[beats.count - 1].duration = 0.5
-        return LogoScript(beats)
+        return LogoScript(
+            mark: mark(0.4),
+            intro: [Beat(pose: dots(24), response: 0.42, damping: 0.76, stagger: 0.05, duration: 0.45)],
+            loop: [
+                Beat(pose: dots(15), response: 0.34, damping: 0.62, stagger: 0.12, duration: 0.22),
+                Beat(pose: dots(24), response: 0.34, damping: 0.62, stagger: 0.12, duration: 0.75),
+            ]
+        )
     }()
 
-    /// The strokes wobble, pull into balls and tumble off into a heap of
-    /// shapes on the ground, the ball tries a hop, and they pull themselves
-    /// back up together.
+    /// Something that couldn't be done: the strokes wobble, pull into balls
+    /// and tumble into a heap, where they stay, the ball now and then
+    /// trying a hop.
     static let failed: LogoScript = {
         let block = LogoOutline.rect(13, 13, radius: 3), ball = LogoOutline.circle(11), cone = LogoOutline.triangle(12, 10.5)
         func heap(ball height: CGFloat) -> [LogoPiece] {
@@ -491,14 +527,21 @@ extension LogoScript {
                 LogoPiece(outline: cone, center: CGPoint(x: 38.5, y: LogoPiece.ground - 6.1), angle: -2 * .pi / 3),
             ]
         }
-        return LogoScript([
-            mark(1.3),
-            Beat(pose: logo.map { var piece = $0; piece.angle -= 0.16; return piece }, response: 0.22, damping: 0.4, stagger: 0.03, duration: 0.24),
-            Beat(pose: LogoPiece.gathered, response: 0.3, damping: 0.8, stagger: 0.03, duration: 0.16),
-            Beat(pose: heap(ball: 5.5), response: 0.6, damping: 0.5, stagger: 0.11, lift: 0.6, duration: 1.5),
-            Beat(pose: heap(ball: 16), response: 0.3, damping: 0.8, duration: 0.2),
-            Beat(pose: heap(ball: 5.5), response: 0.36, damping: 0.42, duration: 0.9),
-        ])
+        let balls = [11.0, 8.0, 5.8].enumerated().map { index, size in
+            LogoPiece(outline: .circle(size), center: LogoPiece.logo[index].center, angle: LogoPiece.logo[index].angle)
+        }
+        return LogoScript(
+            mark: mark(1.0),
+            intro: [
+                Beat(pose: logo.map { var piece = $0; piece.angle -= 0.16; return piece }, response: 0.22, damping: 0.4, stagger: 0.03, duration: 0.24),
+                Beat(pose: balls, response: 0.3, damping: 0.8, stagger: 0.03, duration: 0.16),
+                Beat(pose: heap(ball: 5.5), response: 0.6, damping: 0.5, stagger: 0.11, lift: 0.6, duration: 1.6),
+            ],
+            loop: [
+                Beat(pose: heap(ball: 16), response: 0.3, damping: 0.8, duration: 0.2),
+                Beat(pose: heap(ball: 5.5), response: 0.36, damping: 0.42, duration: 2.4),
+            ]
+        )
     }()
 }
 
@@ -520,9 +563,10 @@ struct LogoFrame: View {
     }
 }
 
-/// The logo acting out `motion`, looping. Switching motion carries the
-/// pieces on from where they are, at the speed they're going, into the
-/// mark and the new motion. With Reduce Motion the mark stays whole and
+/// The logo acting out `motion`: the mark turns into the loader and stays
+/// one, looping, until it's taken away. Switching motion carries the pieces
+/// on from where they are, at the speed they're going, straight into the
+/// new loader. With Reduce Motion the mark stays whole and
 /// breathes.
 struct LogoLoader: View {
     var motion: LogoMotion
@@ -538,7 +582,7 @@ struct LogoLoader: View {
         _playing = State(initialValue: motion)
         // Starts near the end of the mark's hold, so a short wait still
         // sees it move.
-        _start = State(initialValue: Date.now.addingTimeInterval(-max(0, motion.script.beats[0].duration - 0.3)))
+        _start = State(initialValue: Date.now.addingTimeInterval(-max(0, motion.script.mark.duration - 0.3)))
     }
 
     var body: some View {

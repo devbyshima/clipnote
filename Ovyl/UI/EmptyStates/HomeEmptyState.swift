@@ -38,6 +38,7 @@ struct HomeEmptyState: View {
                 written: "said",
                 message: "Ovyl writes down what's said and shown.\nEverything stays on this Mac.",
                 action: ("New note", onNew),
+                actionHelp: "New note from a video, audio or pictures (⌘N)",
                 t: t
             )
         }

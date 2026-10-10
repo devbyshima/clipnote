@@ -253,29 +253,46 @@ struct Handwriting: View {
 
     var body: some View {
         let width = (text as NSString).size(withAttributes: [.font: font]).width
-        // Handwriting reaches past its own box (tall loops, long tails), so
-        // the writing mask gets room around it.
+        // Handwriting reaches past its own box (tall loops, a last letter's
+        // tail), and on screen a text is cut off at its box. So the text
+        // only takes the word's place in the line, and the ink is drawn on
+        // a canvas with room around it.
         let room = size * 0.35
         Text(text)
             .font(Font(font))
-            .foregroundStyle(SceneColor.ink)
             .fixedSize()
-            .padding(room)
-            .mask(alignment: .leading) {
-                // A soft edge sweeping across reads as a pen moving.
-                let edge = 0.14
-                let p = progress * (1 + edge)
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: max(0, min(1, p - edge))),
-                        .init(color: .clear, location: max(0.0001, min(1, p))),
-                    ],
-                    startPoint: .leading, endPoint: .trailing
-                )
-                .opacity(progress > 0 ? 1 : 0)
+            .hidden()
+            .overlay {
+                Canvas { context, canvas in
+                    guard progress > 0 else { return }
+                    let ink = context.resolve(Text(text).font(Font(font)).foregroundStyle(SceneColor.ink))
+                    let origin = CGPoint(x: room, y: room)
+                    guard progress < 1 else {
+                        context.draw(ink, at: origin, anchor: .topLeading)
+                        return
+                    }
+                    context.drawLayer { layer in
+                        layer.draw(ink, at: origin, anchor: .topLeading)
+                        // A soft edge sweeping across reads as a pen moving.
+                        let edge = 0.14
+                        let p = progress * (1 + edge)
+                        layer.blendMode = .destinationIn
+                        layer.fill(
+                            Path(CGRect(origin: .zero, size: canvas)),
+                            with: .linearGradient(
+                                Gradient(stops: [
+                                    .init(color: .black, location: 0),
+                                    .init(color: .black, location: max(0, min(1, p - edge))),
+                                    .init(color: .clear, location: max(0.0001, min(1, p))),
+                                ]),
+                                startPoint: .zero, endPoint: CGPoint(x: canvas.width, y: 0)
+                            )
+                        )
+                    }
+                }
+                .padding(-room)
+                .allowsHitTesting(false)
             }
-            .padding(-room)
             .overlay(alignment: .bottomLeading) {
                 if let underline, underline > 0 {
                     Path { path in

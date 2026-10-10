@@ -81,12 +81,18 @@ struct MediaPane: View {
         VStack(spacing: 0) {
             toolbar
             ZStack {
-                DotGrid()
-                hero
-                    .padding(.horizontal, 28)
-                    .padding(.top, 24)
-                    .padding(.bottom, 84)
+                if isMissing {
+                    MissingMediaState(isAudio: note.mediaKind == .audio, fileName: note.sourceName) { isLocating = true }
+                        .padding(.bottom, 64)
+                } else {
+                    DotGrid()
+                    hero
+                        .padding(.horizontal, 28)
+                        .padding(.top, 24)
+                        .padding(.bottom, 84)
+                }
             }
+            .task(id: note.id) { if note.kind == .video { media.player.load(note) } }
             .overlay(alignment: .bottom) {
                 FloatingBar {
                     if note.hasGallery {
@@ -100,16 +106,11 @@ struct MediaPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.background, ignoresSafeAreaEdges: .top)
-        .fileImporter(isPresented: $isLocating, allowedContentTypes: [.audiovisualContent]) { result in
-            guard case .success(let url) = result else { return }
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            note.sourceBookmark = try? Note.bookmark(for: url)
-            note.sourceName = url.lastPathComponent
-            center.save()
-            media.player.reload(note)
-        }
+        .modifier(LocateSource(note: note, player: media.player, isPresented: $isLocating))
     }
+
+    /// The note's video or recording has moved, so there's nothing to play.
+    private var isMissing: Bool { note.kind == .video && media.player.isUnavailable }
 
     private var toolbar: some View {
         CenteredBar {
@@ -163,8 +164,29 @@ struct MediaPane: View {
     }
 }
 
-/// A note's video sized to fit, or a bar for audio, or a way to find a video
-/// that moved.
+/// The file picker that finds a note's moved video or recording, and plays
+/// it from its new place.
+struct LocateSource: ViewModifier {
+    @Environment(ProcessingCenter.self) private var center
+    let note: Note
+    let player: PlayerModel
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content.fileImporter(isPresented: $isPresented, allowedContentTypes: [.audiovisualContent]) { result in
+            guard case .success(let url) = result else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            note.sourceBookmark = try? Note.bookmark(for: url)
+            note.sourceName = url.lastPathComponent
+            center.save()
+            player.reload(note)
+        }
+    }
+}
+
+/// A note's video sized to fit, or a bar for audio. A moved file shows
+/// `MissingMediaState` in its place, from the view around this one.
 struct VideoHero: View {
     let note: Note
     let player: PlayerModel
@@ -173,22 +195,7 @@ struct VideoHero: View {
     var body: some View {
         Group {
             if player.isUnavailable {
-                VStack(spacing: 10) {
-                    Image(systemName: note.mediaKind == .audio ? "waveform.slash" : "video.slash")
-                        .font(.system(size: 24))
-                        .foregroundStyle(Palette.textSecondary)
-                    Text(note.mediaKind == .audio ? "Recording not found" : "Video not found")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("\(note.sourceName) was moved or deleted. The note is safe.")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Palette.textSecondary)
-                        .multilineTextAlignment(.center)
-                    PlainCapsuleButton(title: "Locate…", action: locate)
-                        .padding(.top, 4)
-                }
-                .padding(24)
-                .frame(maxWidth: 300)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Color.clear
             } else if let avPlayer = player.player {
                 if player.hasVideo {
                     PlayerView(player: avPlayer)

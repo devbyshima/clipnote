@@ -40,6 +40,8 @@ struct EmptyStateSizeTests {
             ("folder", 6.4, { AnyView(FolderEmptyState(onNew: {})) }),
             ("frames", 14.5, { AnyView(FramesEmptyState()) }),
             ("pictures", 14.5, { AnyView(FramesEmptyState(isPictures: true)) }),
+            ("missing-video", 9.2, { AnyView(MissingMediaState(isAudio: false, fileName: "quarterly-planning-review.mp4") {}) }),
+            ("missing-audio", 9.2, { AnyView(MissingMediaState(isAudio: true, fileName: "standup.m4a") {}) }),
         ]
         for (name, loop, view) in scenes {
             for size in Self.sizes {

@@ -79,6 +79,7 @@ struct FolderEmptyState: View {
                 written: "in",
                 message: "Drop notes on the folder in the sidebar, or make a new one here.",
                 action: ("New note", onNew),
+                actionHelp: "New note from a video, audio or pictures (⌘N)",
                 t: t
             ) {
                 FolderGlyph(target: round.target, open: round.open, filled: round.filled, count: round.count, tick: round.tick)

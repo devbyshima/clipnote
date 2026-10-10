@@ -10,6 +10,7 @@ struct MediaViewer: View {
     let item: Int?
     let media: NoteMedia
     @FocusState private var focused: Bool
+    @State private var isLocating = false
 
     private var items: [GalleryItem] { media.items(for: note) }
 
@@ -38,15 +39,19 @@ struct MediaViewer: View {
             }
 
             ZStack {
-                DotGrid()
                 if let index = shownItem {
+                    DotGrid()
                     ZoomableImage(url: items[index].imageURL)
                         .id(items[index].id)
+                } else if note.kind == .video, media.player.isUnavailable {
+                    MissingMediaState(isAudio: note.mediaKind == .audio, fileName: note.sourceName) { isLocating = true }
                 } else {
-                    VideoHero(note: note, player: media.player) {}
+                    DotGrid()
+                    VideoHero(note: note, player: media.player) { isLocating = true }
                         .padding(40)
                 }
             }
+            .modifier(LocateSource(note: note, player: media.player, isPresented: $isLocating))
             .focusable()
             .focusEffectDisabled()
             .focused($focused)
