@@ -11,16 +11,21 @@ final class Folder {
     /// The folder's color: a hex value such as "#FF2D55", picked with the
     /// color flower, or one of `Folder.colors` for older folders.
     var colorName = ""
+    /// Whether the folder is pinned to the sidebar. Every folder is on Home;
+    /// only pinned ones are also in the sidebar.
+    var isPinned = false
 
     init(name: String, colorName: String = "") {
         self.name = name
         self.colorName = colorName
     }
 
-    /// The colors new folders get, in turn.
-    static let colors = ["pink", "purple", "orange", "blue", "green", "yellow", "teal", "red", "gray"]
+    /// The colors new folders get, in turn: earth tones and the app's green,
+    /// from the color flower.
+    static let colors = ["#E2725B", "#2A9D8F", "#D4A017", "#3D5A80", "#B0C246", "#8E4162", "#E8833A", "#1F6F78", "#7A4E2D"]
 
-    /// The folder's color as a hex value.
+    /// The folder's color as a hex value. Folders made before colors were hex
+    /// values keep their named color.
     var hex: String {
         if colorName.hasPrefix("#") { return colorName }
         return switch colorName {

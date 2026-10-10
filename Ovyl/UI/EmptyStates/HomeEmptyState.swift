@@ -173,7 +173,7 @@ struct VideoCard: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Palette.surfaceSunken)
-                    Capsule().fill(Palette.goldGradient)
+                    Capsule().fill(Palette.accent)
                         .frame(width: max(3, geo.size.width * progress))
                         .opacity(progress > 0 ? 1 : 0)
                 }
@@ -275,7 +275,7 @@ struct SongCard: View {
         let dim = Ease.out(Ease.progress(time, from: 1.35, over: 0.5))
         HStack(spacing: 9) {
             ZStack {
-                Circle().fill(LinearGradient(colors: [Palette.accent, Palette.ember], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Circle().fill(Palette.accent.gradient)
                 Image(systemName: "music.note")
                     .font(.system(size: 7.5, weight: .bold))
                     .foregroundStyle(Palette.onAccent)

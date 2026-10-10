@@ -340,26 +340,21 @@ extension EmptyHeadline where Art == EmptyView {
     }
 }
 
-/// The wide button under a headline: the screen's one gold action.
+/// The wide button under a headline: the screen's one green action, as
+/// Beam's Continue.
 struct WideButton: View {
     let title: String
     var help: String?
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(Palette.onAccent)
-                .frame(width: 300, height: 38)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isHovered ? Palette.accentPressed : Palette.accent))
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 300, height: 40)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.prominent)
         .focusEffectDisabled()
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
         .help(help ?? "")
     }
 }

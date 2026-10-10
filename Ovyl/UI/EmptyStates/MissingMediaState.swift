@@ -5,7 +5,7 @@ import SwiftUI
 /// "it was here" in hand, a ghost of the file inside: a frame for a video,
 /// a silent waveform for a recording. A magnifier looks in a few folders
 /// around it, and each gets a "not here". The headline asks to be shown
-/// where it went, with the one gold action to find it.
+/// where it went, with the one green action to find it.
 struct MissingMediaState: View {
     let isAudio: Bool
     let fileName: String

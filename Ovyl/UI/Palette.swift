@@ -1,53 +1,59 @@
 import AppKit
 import SwiftUI
 
-/// Gold & Graphite: graphite surfaces with gold as the one accent, taken from
-/// the app icon. Each color follows the system light or dark appearance.
-/// Every color in the app comes from here; folders keep the colors people
-/// pick for them.
+/// Beam's palette: a pale sage page (dark graphite in dark mode), near-white
+/// cards, black and white text, and Beam green as the one accent. Pure black
+/// is kept for the pages that show a video or recording. Each color follows the system light or dark
+/// appearance. Every color in the app comes from here; folders keep the
+/// colors people pick for them.
 enum Palette {
     /// The AppKit colors behind the SwiftUI ones, for text attributes and
     /// text views; made on each use, as an NSColor can't be shared across
     /// threads.
     enum NS {
-        static var background: NSColor { NSColor(light: 0xF6F6F6, dark: 0x060606) }
-        static var surface: NSColor { NSColor(light: 0xFFFFFF, dark: 0x121212) }
-        static var surfaceSunken: NSColor { NSColor(light: 0xEFEDE7, dark: 0x1E1E1E) }
-        static var border: NSColor { NSColor(light: 0xE4E1D8, dark: 0x2A2A2A) }
-        static var textPrimary: NSColor { NSColor(light: 0x121212, dark: 0xF6F6F6) }
-        static var textSecondary: NSColor { NSColor(light: 0x66625A, dark: 0x9C978C) }
-        static var accent: NSColor { NSColor(light: 0xF6C757, dark: 0xF6C757) }
-        static var accentPressed: NSColor { NSColor(light: 0xF5B849, dark: 0xF7D885) }
-        static var onAccent: NSColor { NSColor(light: 0x121212, dark: 0x060606) }
-        static var accentText: NSColor { NSColor(light: 0x9A5517, dark: 0xF6C757) }
-        static var accentSoft: NSColor { NSColor(light: 0xFCF4D8, dark: 0x31291A) }
-        static var ember: NSColor { NSColor(light: 0xE68225, dark: 0xE68225) }
-        static var shimmerLime: NSColor { NSColor(light: 0xE8FBB2, dark: 0xE8FBB2) }
-        static var shimmerMint: NSColor { NSColor(light: 0xB7EFE1, dark: 0xB7EFE1) }
-        static var shimmerIce: NSColor { NSColor(light: 0xB3F0F6, dark: 0xB3F0F6) }
+        static var background: NSColor { NSColor(light: 0xF1F2EC, dark: 0x161616) }
+        static var surface: NSColor { NSColor(light: 0xFBFCF8, dark: 0x212121) }
+        /// Behind a note's video or recording: the page, pure black in dark mode.
+        static var mediaPage: NSColor { NSColor(light: 0xF1F2EC, dark: 0x000000) }
+        /// Text wells, code and progress tracks: a wash of ink, as Beam's
+        /// fields and chips are.
+        static var surfaceSunken: NSColor { NSColor(light: 0x000101, dark: 0xFEFFFF, alpha: (0.06, 0.06)) }
+        static var border: NSColor { NSColor(light: 0x000101, dark: 0xFEFFFF, alpha: (0.08, 0.08)) }
+        static var textPrimary: NSColor { NSColor(light: 0x000101, dark: 0xFEFFFF) }
+        static var textSecondary: NSColor { NSColor(light: 0x747571, dark: 0xAAACA7) }
+        static var accent: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246) }
+        static var accentPressed: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246, alpha: (0.9, 0.9)) }
+        static var onAccent: NSColor { NSColor(light: 0x000000, dark: 0x000000) }
+        static var accentText: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246) }
+        /// Behind what's selected, as Beam's selected rows and chips.
+        static var accentSoft: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246, alpha: (0.16, 0.16)) }
+        /// Beam green in shadow, for artwork that shades the accent, like the
+        /// folder in the folder's empty state.
+        static var accentDeep: NSColor { NSColor(light: 0x7E8C2A, dark: 0x7E8C2A) }
 
-        // Status colors, apart from gold, each at least 4.5:1 on a surface.
-        static var success: NSColor { NSColor(light: 0x1A7F45, dark: 0x4CC38A) }
-        static var warning: NSColor { NSColor(light: 0xB9420A, dark: 0xFF8F5A) }
-        static var danger: NSColor { NSColor(light: 0xC62828, dark: 0xFF6B6B) }
+        // Status colors, as Beam's: green for done, the system's orange and red.
+        static var success: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246) }
+        static var warning: NSColor { .systemOrange }
+        static var danger: NSColor { .systemRed }
 
         // Roles made from the colors above.
         /// Markdown syntax, list markers and other quiet marks.
-        static var faint: NSColor { NSColor(light: 0x66625A, dark: 0x9C978C, alpha: (0.6, 0.65)) }
-        /// Behind ==highlighted== text: gold, with the text still dark or
+        static var faint: NSColor { NSColor(light: 0x747571, dark: 0xAAACA7, alpha: (0.6, 0.65)) }
+        /// Behind ==highlighted== text: green, with the text still dark or
         /// light on it.
-        static var highlight: NSColor { NSColor(light: 0xF6C757, dark: 0xF6C757, alpha: (0.5, 0.3)) }
+        static var highlight: NSColor { NSColor(light: 0xB0C246, dark: 0xB0C246, alpha: (0.45, 0.35)) }
     }
 
-    /// Gold and ember as "#RRGGBB", for artwork that shades a color by
-    /// mixing it, like the folder in the folder's empty state.
+    /// The accent and its shade as "#RRGGBB", for artwork that shades a
+    /// color by mixing it, like the folder in the folder's empty state.
     enum Hex {
-        static let accent = "#F6C757"
-        static let ember = "#E68225"
+        static let accent = "#B0C246"
+        static let accentDeep = "#7E8C2A"
     }
 
     static let background = Color(nsColor: NS.background)
     static let surface = Color(nsColor: NS.surface)
+    static let mediaPage = Color(nsColor: NS.mediaPage)
     static let surfaceSunken = Color(nsColor: NS.surfaceSunken)
     static let border = Color(nsColor: NS.border)
     static let textPrimary = Color(nsColor: NS.textPrimary)
@@ -57,10 +63,7 @@ enum Palette {
     static let onAccent = Color(nsColor: NS.onAccent)
     static let accentText = Color(nsColor: NS.accentText)
     static let accentSoft = Color(nsColor: NS.accentSoft)
-    static let ember = Color(nsColor: NS.ember)
-    static let shimmerLime = Color(nsColor: NS.shimmerLime)
-    static let shimmerMint = Color(nsColor: NS.shimmerMint)
-    static let shimmerIce = Color(nsColor: NS.shimmerIce)
+    static let accentDeep = Color(nsColor: NS.accentDeep)
 
     static let success = Color(nsColor: NS.success)
     static let warning = Color(nsColor: NS.warning)
@@ -68,44 +71,27 @@ enum Palette {
 
     static let faint = Color(nsColor: NS.faint)
     static let highlight = Color(nsColor: NS.highlight)
-    /// A wash of ink over any surface: hovered and selected rows, count
-    /// badges, key chips, the gray of a secondary control.
-    static let fill = Color(nsColor: NSColor(light: 0x121212, dark: 0xF6F6F6, alpha: (0.06, 0.08)))
+    /// A wash of ink over any surface: selected rows, count badges, key
+    /// chips, the gray of a secondary control.
+    static let fill = Color(nsColor: NSColor(light: 0x000101, dark: 0xFEFFFF, alpha: (0.06, 0.06)))
+    /// Under the pointer, a step fainter than `fill`.
+    static let hover = Color(nsColor: NSColor(light: 0x000101, dark: 0xFEFFFF, alpha: (0.05, 0.05)))
+    /// The edge of what has keyboard focus or is a drop target.
+    static let accentEdge = Color(nsColor: NSColor(light: 0xB0C246, dark: 0xB0C246, alpha: (0.55, 0.55)))
     /// Shadows under cards and floating bars, deeper in dark mode.
-    static let shadow = Color(nsColor: NSColor(light: 0x121212, dark: 0x000000, alpha: (0.07, 0.5)))
+    static let shadow = Color(nsColor: NSColor(light: 0x000101, dark: 0x000000, alpha: (0.07, 0.5)))
+    /// The shadow under a card that's picked up and carried.
+    static let liftShadow = Color(nsColor: NSColor(light: 0x000101, dark: 0x000000, alpha: (0.2, 0.6)))
     /// Behind video and pictures, and the dark scrim over them, in both modes.
-    static let media = Color(nsColor: NSColor(light: 0x060606, dark: 0x060606))
+    static let media = Color(nsColor: NSColor(light: 0x000000, dark: 0x000000))
     /// Text and marks on a color someone picked, such as a folder's: dark
     /// on light colors, light on dark ones, in both modes.
-    static let onLight = Color(nsColor: NSColor(light: 0x121212, dark: 0x121212))
-    static let onDark = Color(nsColor: NSColor(light: 0xF6F6F6, dark: 0xF6F6F6))
-
-    /// Lime into gold into ember, for progress bars and highlights.
-    static let goldGradient = LinearGradient(
-        stops: [
-            .init(color: shimmerLime, location: 0),
-            .init(color: accent, location: 0.35),
-            .init(color: ember, location: 1),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
-
-    /// Gold ring with an iridescent edge, for the app mark and progress rings.
-    static let shimmerRing = AngularGradient(
-        stops: [
-            .init(color: accent, location: 0),
-            .init(color: ember, location: 0.30),
-            .init(color: accent, location: 0.50),
-            .init(color: shimmerLime, location: 0.64),
-            .init(color: shimmerIce, location: 0.76),
-            .init(color: shimmerMint, location: 0.84),
-            .init(color: accent, location: 0.96),
-        ],
-        center: .center,
-        startAngle: .degrees(120),
-        endAngle: .degrees(480)
-    )
+    static let onLight = Color(nsColor: NSColor(light: 0x000101, dark: 0x000101))
+    static let onDark = Color(nsColor: NSColor(light: 0xFEFFFF, dark: 0xFEFFFF))
+    /// The always-dark panels that float over the page, like the folder
+    /// actions and the color flower.
+    static let darkPanel = Color(nsColor: NSColor(light: 0x1A1A1A, dark: 0x1A1A1A))
+    static let darkPanelWell = Color(nsColor: NSColor(light: 0x000000, dark: 0x000000))
 }
 
 extension NSColor {
@@ -127,45 +113,70 @@ extension NSColor {
 
 // MARK: - Button styles
 
-/// The main action: gold, with a dark label, in both modes.
-struct GoldButtonStyle: ButtonStyle {
+/// The main action, as Beam's: a capsule (or `shape`) filled with Beam green
+/// as a soft gradient, a black label, and a glow in the button's own color.
+/// It dims and gives a little when pressed, and grays out when disabled.
+struct ProminentButtonStyle<S: Shape>: ButtonStyle {
+    var tint: Color = Palette.accent
+    var foreground: Color = Palette.onAccent
+    var shape: S
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.onAccent)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(configuration.isPressed ? Palette.accentPressed : Palette.accent, in: Capsule())
-            .contentShape(Capsule())
+        ProminentBody(configuration: configuration, tint: tint, foreground: foreground, shape: shape)
+    }
+
+    private struct ProminentBody: View {
+        let configuration: Configuration
+        let tint: Color
+        let foreground: Color
+        let shape: S
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(isEnabled ? AnyShapeStyle(foreground) : AnyShapeStyle(Palette.textSecondary))
+                .background((isEnabled ? tint : Color.gray.opacity(0.35)).gradient, in: shape)
+                .shadow(color: isEnabled ? tint.opacity(0.35) : .clear, radius: 7, y: 3)
+                .contentShape(shape)
+                .opacity(configuration.isPressed ? 0.9 : 1)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(.snappy(duration: 0.16), value: configuration.isPressed)
+        }
     }
 }
 
-/// A secondary action: outlined, no fill.
-struct OutlineButtonStyle: ButtonStyle {
+/// A secondary action, as Beam's: a capsule washed with ink, with a hairline
+/// edge, that dims when pressed.
+struct PlainCapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Palette.textPrimary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(configuration.isPressed ? Palette.surfaceSunken : .clear, in: Capsule())
-            .overlay(Capsule().strokeBorder(Palette.border))
-            .contentShape(Capsule())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Capsule(style: .continuous).fill(Palette.textPrimary.opacity(0.06)))
+            .overlay(Capsule(style: .continuous).strokeBorder(Palette.textPrimary.opacity(0.10), lineWidth: 0.5))
+            .contentShape(Capsule(style: .continuous))
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 
-extension ButtonStyle where Self == GoldButtonStyle {
-    static var gold: GoldButtonStyle { GoldButtonStyle() }
+extension ButtonStyle where Self == ProminentButtonStyle<Capsule> {
+    static var prominent: ProminentButtonStyle<Capsule> { ProminentButtonStyle(shape: Capsule()) }
 }
 
-extension ButtonStyle where Self == OutlineButtonStyle {
-    static var outline: OutlineButtonStyle { OutlineButtonStyle() }
+extension ButtonStyle where Self == ProminentButtonStyle<Circle> {
+    static var prominentCircle: ProminentButtonStyle<Circle> { ProminentButtonStyle(shape: Circle()) }
+}
+
+extension ButtonStyle where Self == PlainCapsuleButtonStyle {
+    static var plainCapsule: PlainCapsuleButtonStyle { PlainCapsuleButtonStyle() }
 }
 
 // MARK: - Signature pieces
 
-/// Progress as a gold bar, lime into gold into ember, on a sunken track.
-struct GoldProgressBar: View {
+/// Progress as a Beam green bar on a sunken track.
+struct AccentProgressBar: View {
     let value: Double
     var height: CGFloat = 6
 
@@ -176,7 +187,7 @@ struct GoldProgressBar: View {
             .overlay(alignment: .leading) {
                 GeometryReader { proxy in
                     Capsule()
-                        .fill(Palette.goldGradient)
+                        .fill(Palette.accent)
                         .frame(width: max(height, proxy.size.width * min(max(value, 0), 1)))
                         .opacity(value > 0 ? 1 : 0)
                 }

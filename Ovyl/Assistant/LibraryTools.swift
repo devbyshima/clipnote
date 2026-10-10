@@ -431,6 +431,7 @@ final class LibraryTools {
     private func folderNamed(_ name: String, create: Bool) -> Folder? {
         if let folder = findFolder(name) { return folder }
         guard create else { return nil }
+        // On Home, not pinned to the sidebar.
         let folder = Folder(name: name.trimmingCharacters(in: .whitespaces), colorName: Folder.colors[allFolders().count % Folder.colors.count])
         center.context.insert(folder)
         center.save()

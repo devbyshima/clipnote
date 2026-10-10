@@ -115,7 +115,7 @@ struct ProcessingView: View {
 
             if note.status == .processing {
                 VStack(spacing: 6) {
-                    GoldProgressBar(value: note.progress)
+                    AccentProgressBar(value: note.progress)
                         .frame(width: 300)
                         .animation(.easeOut(duration: 0.3), value: note.progress)
                     Text(note.progress, format: .percent.precision(.fractionLength(0)))

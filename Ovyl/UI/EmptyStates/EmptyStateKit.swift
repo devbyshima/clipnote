@@ -79,8 +79,8 @@ enum Ease {
 // MARK: - Colors
 
 /// The empty states' colors, from the palette: a faint grid, paper cards,
-/// bronze handwriting (gold in the dark), and a gold wash with an ember
-/// dashed edge for what Ovyl is reading.
+/// green handwriting, and a green wash with a deeper green dashed edge for
+/// what Ovyl is reading.
 enum SceneColor {
     static let line = Palette.fill
     static let number = Palette.textSecondary.opacity(0.75)
@@ -93,7 +93,7 @@ enum SceneColor {
     static let highlight = Palette.accent.opacity(0.24)
     static let highlightSoft = Palette.accent.opacity(0.1)
     /// The dashed edge: decoration only, never text.
-    static let highlightEdge = Palette.ember
+    static let highlightEdge = Palette.accentDeep
     /// Text that names what's being read.
     static let highlightText = Palette.accentText
     static let label = Palette.textSecondary

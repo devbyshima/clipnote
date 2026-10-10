@@ -153,7 +153,7 @@ struct HomeTests {
         try await render(ContentView(route: .media(video.id, item: nil)), center: center, name: "pane-inspector-close", dark: false)
         for tab in ["speech", "screen", "assistant", "storage"] {
             defaults.set(tab, forKey: "settingsTab")
-            try await render(SettingsView(), center: center, name: "settings-\(tab)", dark: tab == "assistant", size: CGSize(width: 560, height: 520))
+            try await render(SettingsView(), center: center, name: "settings-\(tab)", dark: tab == "assistant", size: SettingsView.size)
         }
         defaults.removeObject(forKey: "settingsTab")
         print("PANES \(Self.folder.path)")
@@ -191,6 +191,233 @@ struct HomeTests {
         print("FLOWER FRAMES \(index)")
     }
 
+    /// Carrying cards with real mouse events: a note trades places with the
+    /// cards it's carried over and settles into its new place, and a note
+    /// carried onto a folder's middle files into it. Frames along the way are
+    /// rendered for checking by eye.
+    @Test func carryingCards() async throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        let defaults = UserDefaults.standard
+        let keys = [HomeView.layoutKey, HomeView.sortKey, HomeView.ascendingKey, HomeView.foldersFirstKey, HomeView.showsTextKey, "homeCardScale", "order.home"]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) } }
+        keys.forEach(defaults.removeObject(forKey:))
+        defaults.set(1.0, forKey: "homeCardScale")
+
+        // Newest first, with no text so every card is one row tall: three
+        // columns of 300 points, two rows.
+        let container = try ModelContainer(for: Note.self, Folder.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let center = ProcessingCenter(container: container)
+        func note(_ title: String, age: TimeInterval) -> Note {
+            let note = center.createTextNote(title: title, markdown: " ")
+            note.editedMarkdown = ""
+            note.createdAt = .now.addingTimeInterval(-age)
+            return note
+        }
+        func folder(_ name: String, _ hex: String, age: TimeInterval) -> Folder {
+            let folder = Folder(name: name, colorName: hex)
+            folder.createdAt = .now.addingTimeInterval(-age)
+            center.context.insert(folder)
+            return folder
+        }
+        let first = note("First", age: 1_000)
+        let shelf = folder("Shelf", "#2A9D8F", age: 2_000)
+        let second = note("Second", age: 3_000)
+        let box = folder("Box", "#E2725B", age: 4_000)
+        center.save()
+
+        let drag = CardDrag()
+        let size = CGSize(width: 1000, height: 640)
+        let hosting = NSHostingView(rootView:
+            CardGrid(folders: [shelf, box], notes: [first, second], allNotes: [first, second], allFolders: [shelf, box])
+                .overlay { CardDragLayer() }
+                .environment(drag)
+                .environment(center)
+                .environment(Navigator(.home))
+                .modelContainer(container)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = hosting
+        window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(for: .seconds(1))
+
+        // Points from the top left; window points run up from the bottom.
+        func send(_ type: NSEvent.EventType, _ point: CGPoint) {
+            let event = NSEvent.mouseEvent(with: type, location: CGPoint(x: point.x, y: size.height - point.y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+            if let event { window.sendEvent(event) }
+        }
+        func carry(from start: CGPoint, to end: CGPoint, steps: Int = 24) async throws {
+            for step in 1...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                send(.leftMouseDragged, CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            try await Task.sleep(for: .milliseconds(450))
+        }
+        func capture(_ name: String) throws {
+            hosting.layoutSubtreeIfNeeded()
+            let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            let data = try #require(rep.representation(using: .png, properties: [:]))
+            try data.write(to: Self.folder.appending(path: "\(name).png"))
+            print("SNAPSHOT \(name) \(data.base64EncodedString())")
+        }
+
+        // Columns start at 30, 349 and 668; the first row's middle is at 100.
+        let firstSpot = CGPoint(x: 180, y: 100)
+        send(.leftMouseDown, firstSpot)
+        try await carry(from: firstSpot, to: CGPoint(x: 200, y: 112), steps: 6)
+        #expect(drag.held?.id == first.id)
+        try capture("carry-lifted")
+
+        // Over the folder's edge it trades places, then with the other note.
+        try await carry(from: CGPoint(x: 200, y: 112), to: CGPoint(x: 370, y: 100))
+        try await carry(from: CGPoint(x: 370, y: 100), to: CGPoint(x: 818, y: 100))
+        try capture("carry-over")
+        send(.leftMouseUp, CGPoint(x: 818, y: 100))
+        try await Task.sleep(for: .seconds(1))
+        #expect(drag.held == nil)
+        #expect(OrderStore.load("home") == [shelf.id, second.id, first.id, box.id])
+        try capture("carry-settled")
+
+        // The second note, now in the middle column, into the box below the first.
+        let secondSpot = CGPoint(x: 499, y: 100)
+        send(.leftMouseDown, secondSpot)
+        try await carry(from: secondSpot, to: CGPoint(x: 180, y: 299))
+        #expect(drag.fileTarget == box.id)
+        try capture("carry-into-folder")
+        send(.leftMouseUp, CGPoint(x: 180, y: 299))
+        try await Task.sleep(for: .seconds(1.2))
+        #expect(second.folderID == box.id)
+        #expect(drag.held == nil)
+
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+
+    /// The sidebar lists only pinned folders, and a folder card carried from
+    /// Home onto the sidebar is pinned there.
+    @Test func carryingAFolderPinsIt() async throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        let defaults = UserDefaults.standard
+        let keys = [HomeView.layoutKey, HomeView.sortKey, HomeView.ascendingKey, HomeView.foldersFirstKey, HomeView.showsTextKey, "homeCardScale", "order.home", "showAssistant", "showSidebar"]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) } }
+        keys.forEach(defaults.removeObject(forKey:))
+        defaults.set(1.0, forKey: "homeCardScale")
+        defaults.set(false, forKey: "showAssistant")
+
+        let container = try ModelContainer(for: Note.self, Folder.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let center = ProcessingCenter(container: container)
+        let box = Folder(name: "Box", colorName: "#E2725B")
+        let desk = Folder(name: "Desk", colorName: "#2A9D8F")
+        desk.isPinned = true
+        desk.createdAt = .now.addingTimeInterval(-5_000)
+        center.context.insert(box)
+        center.context.insert(desk)
+        center.save()
+
+        let size = CGSize(width: 1320, height: 760)
+        let hosting = NSHostingView(rootView:
+            ContentView(route: .home)
+                .environment(center)
+                .modelContainer(container)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = hosting
+        window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(for: .seconds(1.2))
+
+        func send(_ type: NSEvent.EventType, _ point: CGPoint) {
+            let event = NSEvent.mouseEvent(with: type, location: CGPoint(x: point.x, y: size.height - point.y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+            if let event { window.sendEvent(event) }
+        }
+        func capture(_ name: String) throws {
+            hosting.layoutSubtreeIfNeeded()
+            let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            let data = try #require(rep.representation(using: .png, properties: [:]))
+            try data.write(to: Self.folder.appending(path: "\(name).png"))
+            print("SNAPSHOT \(name) \(data.base64EncodedString())")
+        }
+        try capture("pin-before")
+
+        // The newest folder, Box, is the first card, just right of the sidebar.
+        let start = CGPoint(x: SidebarView.width + 130, y: 110)
+        let end = CGPoint(x: 110, y: 330)
+        send(.leftMouseDown, start)
+        for step in 1...30 {
+            let t = CGFloat(step) / 30
+            send(.leftMouseDragged, CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        try capture("pin-over-sidebar")
+        send(.leftMouseUp, end)
+        try await Task.sleep(for: .seconds(1.2))
+        #expect(box.isPinned)
+        try capture("pin-after")
+
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+
+    /// A folder made from Home's toolbar is named right on its card: the
+    /// field takes focus with the name selected, and Return keeps what's typed.
+    @Test func namingANewFolderOnItsCard() async throws {
+        try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        let defaults = UserDefaults.standard
+        let keys = [HomeView.layoutKey, HomeView.sortKey, "homeCardScale", "showAssistant"]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) } }
+        keys.forEach(defaults.removeObject(forKey:))
+        defaults.set(1.0, forKey: "homeCardScale")
+        defaults.set(false, forKey: "showAssistant")
+
+        let container = try ModelContainer(for: Note.self, Folder.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let center = ProcessingCenter(container: container)
+        let size = CGSize(width: 1100, height: 600)
+        let hosting = NSHostingView(rootView:
+            ContentView(route: .home)
+                .environment(center)
+                .modelContainer(container)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: hosting.frame, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentView = hosting
+        window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(for: .seconds(1))
+
+        let folder = center.createFolder(pinned: false)
+        try await Task.sleep(for: .seconds(1))
+        let field = try #require(window.firstResponder as? NSTextView, "the name field has focus")
+        #expect(field.selectedRange().length == folder.name.count)
+        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        let data = try #require(rep.representation(using: .png, properties: [:]))
+        print("SNAPSHOT naming-folder \(data.base64EncodedString())")
+
+        field.insertText("Trips", replacementRange: field.selectedRange())
+        field.insertNewline(nil)
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(folder.name == "Trips")
+        #expect(!folder.isPinned)
+
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+
     /// A real click through a window picks the petal on top under it.
     @Test func flowerPicksThePetalClicked() async throws {
         final class Picked { var hex: String? }
@@ -216,15 +443,15 @@ struct HomeTests {
             }
             try await Task.sleep(for: .milliseconds(150))
         }
-        // The coral petal, second from the top on the right.
+        // The terracotta petal, second from the top on the right.
         try await click(CGPoint(x: size / 2 + 47 * sin(.pi / 6), y: size / 2 - 47 * cos(.pi / 6)))
-        #expect(picked.hex == "#EF533A")
-        // The white center.
+        #expect(picked.hex == "#E2725B")
+        // The off-white center.
         try await click(CGPoint(x: size / 2, y: size / 2))
-        #expect(picked.hex == "#FDFDFD")
-        // Where the blush pastel overlaps the crimson behind it, the pastel is on top.
+        #expect(picked.hex == "#F1F2EC")
+        // Where the dusty rose overlaps the walnut behind it, the rose is on top.
         try await click(CGPoint(x: size / 2 - 25 * sin(.pi / 3) - 6, y: size / 2 - 25 * cos(.pi / 3) - 6))
-        #expect(picked.hex == "#F9C2E6")
+        #expect(picked.hex == "#D9A5B3")
         window.orderOut(nil)
         window.contentView = nil
     }
@@ -279,8 +506,8 @@ struct HomeTests {
         #expect(folder.hex == "#AF52DE")
         folder.colorName = "#13FFAB"
         #expect(folder.hex == "#13FFAB")
-        #expect(HexColor("#FDFDFD").isLight)
-        #expect(!HexColor("#59131A").isLight)
+        #expect(HexColor("#F1F2EC").isLight)
+        #expect(!HexColor("#4A3426").isLight)
         #expect(NoteCard.day(.now) == "TODAY")
         #expect(NoteCard.preview(of: "## Heading\n\n[4:02](#t=242) So **this** is it.\n\n\n> [!screen] On screen\n> Slide") == "Heading\n\n4:02 So this is it.\n\nOn screen\nSlide")
     }
@@ -305,6 +532,9 @@ struct HomeTests {
         frameView.cacheDisplay(in: frameView.bounds, to: rep)
         let data = try #require(rep.representation(using: .png, properties: [:]))
         try data.write(to: Self.folder.appending(path: "\(name).png"))
+        // The container is private to the app, so the image also goes to the
+        // log, as in SnapshotTests.
+        print("SNAPSHOT \(name) \(data.base64EncodedString())")
         window.orderOut(nil)
         window.contentView = nil
     }
@@ -322,7 +552,7 @@ struct FlowerStage: View {
             FlowerPicker(progress: progress, origin: 100, hovered: hovered) { _ in }
                 .position(x: 150, y: 128)
             FolderActionsBar(pickerOpen: progress > 0.5, rename: {}, color: {}, delete: {})
-                .position(x: 150, y: 228)
+                .position(x: 150 - FolderActionsBar.colorOffset, y: 228)
         }
         .frame(width: 300, height: 300)
     }

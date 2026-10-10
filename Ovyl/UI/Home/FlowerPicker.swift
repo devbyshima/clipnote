@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The color flower: a dark disc ringed in a glowing rainbow, holding twelve
-/// bright petals around six pastel ones and a white center. The petal under
+/// The color flower: a dark disc ringed in a glow of its own colors, holding
+/// twelve rich earth tones (sun-baked reds and oranges, mustard, the app's
+/// green, teals, denim, plum, brown and the app's graphite) around six light
+/// ones and an off-white center. The petal under
 /// the pointer, and only that one, swells with a white rim and throws its
 /// color out past the ring; moving on, it settles back as the next one
 /// swells. The flower rises out of the button that opens it as a dot, swells
@@ -74,14 +76,17 @@ struct FlowerPicker: View, Animatable {
 
     static let size: CGFloat = 140
 
-    /// Clockwise from the top: a deep wine, then the hues round the wheel.
+    /// Clockwise from the top: brick, terracotta, burnt orange, mustard, the
+    /// app's green, fern, teal, deep turquoise, denim, plum, walnut and the
+    /// app's graphite.
     static let outer = [
-        "#59131A", "#EF533A", "#F6AF08", "#A1FD07", "#11FF2E", "#13FFAB",
-        "#11D0EC", "#2B7BF8", "#7932F5", "#E004E1", "#EA0093", "#E91652",
+        "#A63D2F", "#E2725B", "#E8833A", "#D4A017", Palette.Hex.accent, "#5E9E4F",
+        "#2A9D8F", "#1F6F78", "#3D5A80", "#8E4162", "#7A4E2D", "#212121",
     ]
-    /// Clockwise from the top: silver, cream, mint, ice, lavender, blush.
-    static let inner = ["#D1CDD2", "#F6F5C9", "#C3FFCA", "#BEE8F8", "#D1BEF6", "#F9C2E6"]
-    static let center = "#FDFDFD"
+    /// Clockwise from the top: saffron, apricot, sand, lime, seafoam, dusty rose.
+    static let inner = ["#F2C14E", "#F4A988", "#E8C9A0", "#C9DE8A", "#9DD3C8", "#D9A5B3"]
+    /// The app's off-white page.
+    static let center = "#F1F2EC"
 
     private static let outerRadius: CGFloat = 47
     private static let innerRadius: CGFloat = 25
@@ -107,21 +112,11 @@ struct FlowerPicker: View, Animatable {
         return CGSize(width: radius * CGFloat(sin(radians)), height: -radius * CGFloat(cos(radians)))
     }
 
+    /// The outer petals' colors round the wheel, from the top.
     private static let ring = AngularGradient(
-        stops: [
-            .init(color: Color(hex: "#E91652"), location: 0),
-            .init(color: Color(hex: "#EF533A"), location: 0.083),
-            .init(color: Color(hex: "#F6AF08"), location: 0.167),
-            .init(color: Color(hex: "#A1FD07"), location: 0.25),
-            .init(color: Color(hex: "#11FF2E"), location: 0.333),
-            .init(color: Color(hex: "#13FFAB"), location: 0.417),
-            .init(color: Color(hex: "#11D0EC"), location: 0.5),
-            .init(color: Color(hex: "#2B7BF8"), location: 0.583),
-            .init(color: Color(hex: "#7932F5"), location: 0.667),
-            .init(color: Color(hex: "#E004E1"), location: 0.75),
-            .init(color: Color(hex: "#EA0093"), location: 0.833),
-            .init(color: Color(hex: "#E91652"), location: 1),
-        ],
+        stops: (outer + [outer[0]]).enumerated().map { index, hex in
+            .init(color: Color(hex: hex), location: Double(index) / Double(outer.count))
+        },
         center: .center,
         startAngle: .degrees(-90),
         endAngle: .degrees(270)
@@ -153,7 +148,7 @@ struct FlowerPicker: View, Animatable {
                     .transition(.opacity)
             }
 
-            Circle().fill(Color(hex: "#0E1011"))
+            Circle().fill(Palette.darkPanelWell)
                 .frame(width: size, height: size)
 
             // The petals again, dim and soft, as the light they cast inside.
@@ -217,18 +212,21 @@ struct FlowerPicker: View, Animatable {
 /// The color button opens the flower above itself.
 struct FolderActionsBar: View {
     let pickerOpen: Bool
+    var isPinned = false
     var rename: () -> Void
     var color: () -> Void
+    var pin: () -> Void = {}
     var delete: () -> Void
 
     var body: some View {
         HStack(spacing: 2) {
             BarIcon(symbol: "pencil", help: "Rename", action: rename)
             BarIcon(symbol: "drop", help: "Color", dimmed: pickerOpen, action: color)
+            BarIcon(symbol: isPinned ? "pin.slash" : "pin", help: isPinned ? "Unpin from Sidebar" : "Pin to Sidebar", action: pin)
             BarIcon(symbol: "trash", help: "Delete Folder", action: delete)
         }
         .padding(5)
-        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(Color(hex: "#1A1C1D")))
+        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(Palette.darkPanel))
         .overlay(
             RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .strokeBorder(LinearGradient(colors: [.white.opacity(0.1), .white.opacity(0.03)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
@@ -237,8 +235,10 @@ struct FolderActionsBar: View {
         .environment(\.colorScheme, .dark)
     }
 
-    /// The width the pill takes, and where its color button sits from its center.
-    static let width: CGFloat = 3 * 48 + 2 * 2 + 10
+    /// The width the pill takes, and where its color button sits from its
+    /// center: second of four.
+    static let width: CGFloat = 4 * 48 + 3 * 2 + 10
+    static let colorOffset: CGFloat = -25
     static let height: CGFloat = 46
 }
 

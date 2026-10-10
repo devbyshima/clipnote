@@ -40,13 +40,13 @@ struct MediaViewer: View {
 
             ZStack {
                 if let index = shownItem {
-                    DotGrid()
+                    DotGrid(background: Palette.mediaPage)
                     ZoomableImage(url: items[index].imageURL)
                         .id(items[index].id)
                 } else if note.kind == .video, media.player.isUnavailable {
                     MissingMediaState(isAudio: note.mediaKind == .audio, fileName: note.sourceName) { isLocating = true }
                 } else {
-                    DotGrid()
+                    DotGrid(background: Palette.mediaPage)
                     VideoHero(note: note, player: media.player) { isLocating = true }
                         .padding(40)
                 }
@@ -59,7 +59,7 @@ struct MediaViewer: View {
             .onAppear { focused = true }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background(Palette.mediaPage)
     }
 
     private var title: String {

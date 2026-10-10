@@ -94,14 +94,14 @@ struct AssistantView: View {
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 18) {
             Spacer(minLength: 0)
-            // The app mark in a shimmer ring.
+            // The app mark in a green ring.
             OvylMark(accent: Palette.accent)
                 .foregroundStyle(Palette.textPrimary)
                 .frame(width: 26, height: 26)
                 .frame(width: 46, height: 46)
                 .background(Palette.surface, in: Circle())
                 .padding(3)
-                .overlay(Circle().strokeBorder(Palette.shimmerRing, lineWidth: 3))
+                .overlay(Circle().strokeBorder(Palette.accent.gradient, lineWidth: 3))
                 .padding(.bottom, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Ask about your notes.")
@@ -206,11 +206,9 @@ struct AssistantView: View {
         } label: {
             Image(systemName: session.isResponding ? "stop.fill" : "arrow.up")
                 .font(.system(size: session.isResponding ? 10 : 13, weight: .bold))
-                .foregroundStyle(empty && !session.isResponding ? Palette.textSecondary : Palette.onAccent)
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(empty && !session.isResponding ? Palette.surfaceSunken : Palette.accent))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.prominentCircle)
         .focusEffectDisabled()
         .disabled(empty && !session.isResponding)
         .help(session.isResponding ? "Stop" : "Send (Return)")
@@ -536,7 +534,7 @@ struct ChatHistoryRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(isHovered ? Palette.fill.opacity(0.6) : .clear)
+        .background(isHovered ? Palette.hover : .clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture(perform: open)

@@ -4,9 +4,9 @@ import SwiftUI
 /// view menu picks how they're laid out (a messy grid, where each card drops
 /// into the shortest column and a note with text stands twice as tall; an even
 /// grid; or a list), how they're sorted, whether folders come first, and
-/// whether notes show their text. Cards and rows can be dragged into a new
-/// order, which is kept as the manual order for that page; a note dragged
-/// onto a folder files into it. A folder's dots bring up its rename, color
+/// whether notes show their text. Cards and rows can be picked up and carried
+/// into a new order, which is kept as the manual order for that page; a note
+/// carried onto a folder, here or in the sidebar, files into it. A folder's dots bring up its rename, color
 /// and delete pill; the color button opens the color flower.
 struct CardGrid: View {
     @Environment(ProcessingCenter.self) private var center
@@ -21,9 +21,12 @@ struct CardGrid: View {
 
     @State private var actionsFolder: UUID?
     @State private var order: [UUID]
-    @State private var dragging: DraggedItem?
-    @State private var fileTarget: UUID?
-    @State private var dragSignal = DragSignal()
+    /// The card being carried, shared with the window, which draws it.
+    @Environment(CardDrag.self) private var windowDrag: CardDrag?
+    @State private var ownDrag = CardDrag()
+    @State private var frames = CardFrames()
+    @State private var scrollPosition = ScrollPosition()
+    @State private var autoscroll: Task<Void, Never>?
     @State private var pickerOpen: Bool
     /// How big the cards are, from the slider at the bottom; smallest at first.
     @AppStorage("homeCardScale") private var scale = CardGrid.scales.lowerBound
@@ -32,8 +35,9 @@ struct CardGrid: View {
     @AppStorage(HomeView.ascendingKey) private var ascending = false
     @AppStorage(HomeView.foldersFirstKey) private var foldersFirst = false
     @AppStorage(HomeView.showsTextKey) private var showsText = true
-    @State private var renaming: Folder?
-    @State private var renameText = ""
+    /// The folder whose name is being edited on its card, and the name so far.
+    @State private var editingFolder: UUID?
+    @State private var editingName = ""
     @State private var deleting: Folder?
 
     /// `showsActionsFor` and `pickerOpen` start with a folder's pill, and its
@@ -107,30 +111,27 @@ struct CardGrid: View {
 
     var body: some View {
         GeometryReader { geo in
-            let s = CGFloat(scale)
-            let spacing = (Self.spacing * s).rounded()
-            let available = geo.size.width - 2 * Self.padding
-            let columns = max(1, Int((available + spacing) / (Self.idealWidth * s + spacing)))
-            let width = floor((available - CGFloat(columns - 1) * spacing) / CGFloat(columns))
-            // Cards keep their proportions; one column caps them at their ideal size.
-            let unit = (min(width, Self.idealWidth * s * 1.25) * 0.6).rounded()
-            // An even grid gives every card the same height.
-            let even = layout == .grid ? (unit * 1.4).rounded() : nil
+            let metrics = metrics(width: geo.size.width)
+            let s = metrics.scale
+            let spacing = metrics.spacing
+            let columns = metrics.columns
+            let unit = metrics.unit
+            let even = metrics.even
             ScrollView {
                 if layout == .list {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(items) { item in
                             switch item {
                             case .folder(let folder):
-                                FolderListRow(folder: folder, count: count(in: folder), isDropTarget: fileTarget == folder.id) {
+                                FolderListRow(folder: folder, count: count(in: folder), isDropTarget: drag.fileTarget == folder.id, naming: naming(folder)) {
                                     navigator.go(.folder(folder.id))
                                 } more: {
                                     toggleActions(for: folder)
                                 }
-                                .modifier(reorderable(item))
+                                .modifier(liftable(item, radius: 12))
                             case .note(let note):
                                 NoteListRow(note: note, folderName: folderName(of: note), folders: allFolders, isDraggable: false)
-                                    .modifier(reorderable(item))
+                                    .modifier(liftable(item, radius: 12))
                             }
                         }
                     }
@@ -147,17 +148,18 @@ struct CardGrid: View {
                                     height: even ?? unit,
                                     scale: s,
                                     isActive: actionsFolder == folder.id,
-                                    isDropTarget: fileTarget == folder.id
+                                    isDropTarget: drag.fileTarget == folder.id,
+                                    naming: naming(folder)
                                 ) {
                                     navigator.go(.folder(folder.id))
                                 } more: {
                                     toggleActions(for: folder)
                                 }
-                                .modifier(reorderable(item))
+                                .modifier(liftable(item, radius: 28 * s))
                                 .zIndex(actionsFolder == folder.id ? 1 : 0)
                             case .note(let note):
                                 NoteCard(note: note, folders: allFolders, unit: unit, scale: s, height: even, showsText: showsText)
-                                    .modifier(reorderable(item))
+                                    .modifier(liftable(item, radius: 28 * s))
                             }
                         }
                     }
@@ -167,16 +169,17 @@ struct CardGrid: View {
                 }
             }
             .scrollIndicators(.visible)
-            .onDrop(of: [.ovylNote, .ovylFolder], delegate: ReorderEnd(dragging: $dragging, fileTarget: $fileTarget, signal: dragSignal))
-            .task(id: dragging?.id) {
-                // A cancelled drag sends nothing; let go once it's been quiet a moment.
-                while dragging != nil, !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    if Date.now.timeIntervalSince(dragSignal.last) > 0.9 {
-                        dragging = nil
-                        fileTarget = nil
-                    }
-                }
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in frames.offset = y }
+            .onScrollGeometryChange(for: CGFloat.self, of: { max(0, $0.contentSize.height - $0.containerSize.height) }) { _, most in
+                frames.maxOffset = most
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.viewport = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { frames.width = $0 }
+            .onDisappear {
+                autoscroll?.cancel()
+                if drag.held != nil, drag.isFollowing { NSCursor.pop() }
+                if drag.held != nil { drag.end() }
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: layout)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sort)
@@ -199,14 +202,9 @@ struct CardGrid: View {
             }
         }
         .background(Palette.background)
-        .alert("Rename Folder", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $renameText)
-            Button("Rename") {
-                if let renaming { center.rename(renaming, to: renameText) }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
-        }
+        // A folder made from Home's toolbar is named right on its card.
+        .onChange(of: center.folderToRename, initial: true) { _, _ in beginPendingRename() }
+        .onChange(of: folders.map(\.id)) { _, _ in beginPendingRename() }
         .alert(
             "Delete “\(deleting?.name ?? "")”?",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
@@ -248,20 +246,30 @@ struct CardGrid: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { close() }
             }
             .animation(pickerOpen ? FlowerPicker.opening : FlowerPicker.closing, value: pickerOpen)
-            .position(x: barX, y: flowerY)
+            .position(x: barX + FolderActionsBar.colorOffset, y: flowerY)
 
-            FolderActionsBar(pickerOpen: pickerOpen) {
-                renameText = folder.name
-                renaming = folder
-                close()
+            // The pill gives way to whatever it opens: the flower, or the
+            // name being edited on the card.
+            if !pickerOpen {
+            FolderActionsBar(pickerOpen: pickerOpen, isPinned: folder.isPinned) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    close()
+                    beginRename(folder)
+                }
             } color: {
-                pickerOpen.toggle()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { pickerOpen = true }
+            } pin: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    center.setPinned(folder, !folder.isPinned)
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { close() }
             } delete: {
                 deleting = folder
                 close()
             }
             .position(x: barX, y: barY)
             .transition(.scale(scale: 0.85, anchor: above ? .bottom : .top).combined(with: .opacity))
+            }
         }
         .frame(width: size.width, height: size.height)
     }
@@ -271,26 +279,273 @@ struct CardGrid: View {
         actionsFolder = nil
     }
 
-    // MARK: Reordering
+    // MARK: Renaming
 
-    /// Lets a card or row be picked up, and moves whatever's dragged over it
-    /// into its place.
-    private func reorderable(_ item: Item) -> Reorderable {
-        Reorderable(
-            item: DraggedItem(id: item.id, isFolder: item.isFolder),
-            dragging: $dragging,
-            fileTarget: $fileTarget,
-            signal: dragSignal,
-            move: move,
-            file: { note, folder in
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    center.move([note], to: folder)
-                }
-            }
+    private func beginRename(_ folder: Folder) {
+        editingName = folder.name
+        editingFolder = folder.id
+    }
+
+    /// Keeps the name typed, if it's not empty, and stops editing.
+    private func commitRename(_ folder: Folder) {
+        guard editingFolder == folder.id else { return }
+        center.rename(folder, to: editingName)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { editingFolder = nil }
+    }
+
+    private func cancelRename(_ folder: Folder) {
+        editingName = folder.name
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { editingFolder = nil }
+    }
+
+    /// Starts naming a folder just made from Home's toolbar, once it's on
+    /// the page. A pinned one is named in the sidebar instead.
+    private func beginPendingRename() {
+        guard let id = center.folderToRename, let folder = folders.first(where: { $0.id == id }), !folder.isPinned else { return }
+        center.folderToRename = nil
+        beginRename(folder)
+    }
+
+    /// What a folder card or row needs to edit its name in place.
+    private func naming(_ folder: Folder) -> FolderNaming {
+        FolderNaming(
+            isEditing: editingFolder == folder.id,
+            name: $editingName,
+            commit: { commitRename(folder) },
+            cancel: { cancelRename(folder) }
         )
     }
 
-    /// Puts `dragged` where `target` is. The first move switches the page to
+    // MARK: Reordering
+
+    private var drag: CardDrag { windowDrag ?? ownDrag }
+
+    /// The folder this page shows, if it's a folder's page.
+    private var pageFolderID: UUID? { UUID(uuidString: scope) }
+
+    private struct Metrics {
+        var scale: CGFloat
+        var spacing: CGFloat
+        var columns: Int
+        /// A card's height, from its column's width: one row of the messy grid.
+        var unit: CGFloat
+        /// The even grid gives every card the same height.
+        var even: CGFloat?
+    }
+
+    /// How the cards are sized for a page this wide.
+    private func metrics(width: CGFloat) -> Metrics {
+        let s = CGFloat(scale)
+        let spacing = (Self.spacing * s).rounded()
+        let available = width - 2 * Self.padding
+        let columns = max(1, Int((available + spacing) / (Self.idealWidth * s + spacing)))
+        let column = floor((available - CGFloat(columns - 1) * spacing) / CGFloat(columns))
+        // Cards keep their proportions; one column caps them at their ideal size.
+        let unit = (min(column, Self.idealWidth * s * 1.25) * 0.6).rounded()
+        return Metrics(scale: s, spacing: spacing, columns: columns, unit: unit, even: layout == .grid ? (unit * 1.4).rounded() : nil)
+    }
+
+    /// Lets a card or row be picked up and carried to a new place.
+    private func liftable(_ item: Item, radius: CGFloat) -> Liftable {
+        Liftable(
+            id: item.id,
+            isHeld: drag.held?.id == item.id,
+            isEnabled: editingFolder != item.id,
+            radius: radius,
+            frames: frames,
+            changed: { dragChanged(item, $0) },
+            ended: { _ in dragEnded(item) }
+        )
+    }
+
+    /// Picks the card up on its first move, then keeps it under the pointer,
+    /// leaning a little into the way it's going.
+    private func dragChanged(_ item: Item, _ value: DragGesture.Value) {
+        if drag.held?.id != item.id {
+            guard drag.held == nil, let frame = frames.rects[item.id] else { return }
+            drag.pickUp(
+                CardDrag.Held(id: item.id, isFolder: item.isFolder),
+                frame: frame,
+                at: value.startLocation,
+                preview: preview(of: item, size: frame.size)
+            )
+            frames.lastSwap = nil
+            NSCursor.closedHand.push()
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.68)) { drag.lift = 1 }
+            startAutoscroll()
+        }
+        guard drag.isFollowing else { return }
+        drag.pointer = value.location
+        let lean = max(-1, min(1, value.velocity.width / 1400))
+        withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.72)) { drag.tilt = lean * 3 }
+        retarget()
+    }
+
+    /// Makes room where the card is over another, or marks the folder it
+    /// would file into: a folder on the page, or a folder in the sidebar. A
+    /// note held at a folder's edge for a moment takes the folder's place
+    /// instead, so reaching a folder never pushes it away.
+    private func retarget() {
+        guard let held = drag.held, drag.isFollowing else { return }
+        let point = drag.pointer
+        if frames.viewport.contains(point) {
+            if frames.rects[held.id]?.contains(point) == true {
+                frames.lingering = nil
+                setFileTarget(nil)
+                return
+            }
+            if let target = items.first(where: { $0.id != held.id && frames.rects[$0.id]?.contains(point) == true }),
+               let rect = frames.rects[target.id] {
+                if target.isFolder, !held.isFolder {
+                    if rect.insetBy(dx: rect.width * 0.14, dy: rect.height * 0.14).contains(point) {
+                        frames.lingering = nil
+                        setFileTarget(target.id)
+                        return
+                    }
+                    setFileTarget(nil)
+                    guard let lingering = frames.lingering, lingering.id == target.id else {
+                        frames.lingering = (target.id, .now)
+                        return
+                    }
+                    guard Date.now.timeIntervalSince(lingering.since) > 0.35 else { return }
+                } else {
+                    setFileTarget(nil)
+                }
+                frames.lingering = nil
+                guard frames.lastSwap != target.id else { return }
+                frames.lastSwap = target.id
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) { move(held.id, to: target.id) }
+                return
+            }
+            frames.lastSwap = nil
+            frames.lingering = nil
+            setFileTarget(nil)
+            return
+        }
+        frames.lastSwap = nil
+        frames.lingering = nil
+        if held.isFolder {
+            // A folder carried onto the sidebar is pinned there.
+            let pins = drag.sidebarFrame.contains(point) && folders.first { $0.id == held.id }?.isPinned == false
+            if drag.pinsToSidebar != pins {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { drag.pinsToSidebar = pins }
+            }
+            return
+        }
+        let row = drag.sidebarFolders.first { $0.value.contains(point) }?.key
+        setFileTarget(row == pageFolderID ? nil : row)
+    }
+
+    private func setFileTarget(_ id: UUID?) {
+        if drag.pinsToSidebar {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { drag.pinsToSidebar = false }
+        }
+        guard drag.fileTarget != id else { return }
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.8)) { drag.fileTarget = id }
+    }
+
+    /// Lets go: the card settles into its place, or sinks into the folder
+    /// it's over and files into it.
+    private func dragEnded(_ item: Item) {
+        guard let held = drag.held, held.id == item.id, drag.isFollowing else { return }
+        autoscroll?.cancel()
+        NSCursor.pop()
+        if drag.pinsToSidebar, let folder = folders.first(where: { $0.id == held.id }) {
+            // Flies to its place in the sidebar, which takes it, and shows
+            // again in its place on the page.
+            let slot = drag.sidebarPinSlot
+            let size = drag.size
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.88), completionCriteria: .removed) {
+                drag.landing = CGRect(x: slot.midX - size.width / 2, y: slot.midY - size.height / 2, width: size.width, height: size.height)
+                drag.sinks = true
+                drag.tilt = 0
+            } completion: {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.85)) {
+                    center.setPinned(folder, true)
+                    drag.end()
+                }
+            }
+            return
+        }
+        if let folder = drag.fileTarget, let rect = frames.rects[folder] ?? drag.sidebarFolders[folder] {
+            let size = drag.size
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.9), completionCriteria: .removed) {
+                drag.landing = CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+                drag.sinks = true
+                drag.tilt = 0
+            } completion: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                    center.move([held.id], to: folder)
+                }
+                // The note leaves the page first, so its place closes up
+                // before the drag lets go of it.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    drag.end()
+                }
+            }
+        } else {
+            let place = frames.rects[held.id] ?? drag.frame
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.8), completionCriteria: .removed) {
+                drag.landing = place
+                drag.lift = 0
+                drag.tilt = 0
+            } completion: {
+                drag.end()
+            }
+        }
+    }
+
+    /// Scrolls the page while the held card is near its top or bottom edge,
+    /// faster the closer it gets, and checks again on a card held lingering
+    /// at a folder's edge.
+    private func startAutoscroll() {
+        autoscroll?.cancel()
+        frames.lingering = nil
+        autoscroll = Task { @MainActor in
+            while !Task.isCancelled, drag.isFollowing {
+                try? await Task.sleep(for: .milliseconds(16))
+                if frames.lingering != nil { retarget() }
+                let view = frames.viewport
+                let point = drag.pointer
+                let edge: CGFloat = 70
+                guard view.width > 0, point.x >= view.minX, point.x <= view.maxX else { continue }
+                var push: CGFloat = 0
+                if point.y < view.minY + edge {
+                    push = -min(1, (view.minY + edge - point.y) / edge)
+                } else if point.y > view.maxY - edge {
+                    push = min(1, (point.y - (view.maxY - edge)) / edge)
+                }
+                guard push != 0 else { continue }
+                let offset = min(max(frames.offset + push * abs(push) * 18, 0), frames.maxOffset)
+                guard abs(offset - frames.offset) > 0.5 else { continue }
+                frames.offset = offset
+                scrollPosition.scrollTo(y: offset)
+                retarget()
+            }
+        }
+    }
+
+    /// The card or row as it looks on the page, drawn by the window while
+    /// it's held.
+    private func preview(of item: Item, size: CGSize) -> AnyView {
+        let metrics = metrics(width: frames.width)
+        let row = RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.surface)
+        switch (item, layout == .list) {
+        case (.folder(let folder), true):
+            return AnyView(FolderListRow(folder: folder, count: count(in: folder), open: {}, more: {}).background(row))
+        case (.note(let note), true):
+            let text = note.status == .ready ? NoteCard.preview(of: note.markdown, limit: 320) : ""
+            return AnyView(NoteListRow(note: note, folderName: folderName(of: note), folders: allFolders, isDraggable: false, thumbnailPreview: text).background(row))
+        case (.folder(let folder), false):
+            return AnyView(FolderCard(folder: folder, count: count(in: folder), height: size.height, scale: metrics.scale, isActive: false, open: {}, more: {}))
+        case (.note(let note), false):
+            let text = note.status == .ready ? NoteCard.preview(of: note.markdown) : ""
+            return AnyView(NoteCard(note: note, folders: allFolders, unit: metrics.unit, scale: metrics.scale, height: metrics.even, showsText: showsText, initialPreview: text))
+        }
+    }
+
+/// Puts `dragged` where `target` is. The first move switches the page to
     /// its manual order, starting from the order on screen.
     private func move(_ dragged: UUID, to target: UUID) {
         let ids = OrderStore.moving(dragged, to: target, in: items.map(\.id))
@@ -377,8 +632,20 @@ struct NoteCard: View {
     var height: CGFloat?
     var showsText = true
 
-    @State private var preview = ""
+    @State private var preview: String
     @State private var isHovered = false
+
+    /// `initialPreview` is the note's text when it's already known, as for a
+    /// card that's being carried, so it's drawn whole from the start.
+    init(note: Note, folders: [Folder], unit: CGFloat, scale: CGFloat = 1, height: CGFloat? = nil, showsText: Bool = true, initialPreview: String = "") {
+        self.note = note
+        self.folders = folders
+        self.unit = unit
+        self.scale = scale
+        self.height = height
+        self.showsText = showsText
+        _preview = State(initialValue: initialPreview)
+    }
 
     /// Notes with text stand two rows tall; an empty or unfinished note, one.
     private var isTall: Bool { note.status == .ready && !preview.isEmpty && showsText }
@@ -471,7 +738,7 @@ struct NoteCard: View {
                 Text(note.status == .queued ? "Waiting" : (note.stage.isEmpty ? "Working" : note.stage))
                     .font(.system(size: 12.5))
                     .foregroundStyle(CardColor.body)
-                GoldProgressBar(value: note.progress, height: 4)
+                AccentProgressBar(value: note.progress, height: 4)
             }
             .padding(.top, 14)
         case .failed:
@@ -562,6 +829,7 @@ struct FolderCard: View {
     let isActive: Bool
     /// A note is being dragged over it, to file into it.
     var isDropTarget = false
+    var naming = FolderNaming()
     var open: () -> Void
     var more: () -> Void
 
@@ -580,13 +848,19 @@ struct FolderCard: View {
 
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(folder.name)
-                            .font(.system(size: 25 * scale, weight: .bold))
-                            .lineLimit(1)
-                        Text("\(count)")
-                            .font(.system(size: 15 * scale, weight: .medium).monospacedDigit())
-                            .tracking(1.5 * scale)
-                            .opacity(0.82)
+                        FolderName(name: folder.name, naming: naming, font: .system(size: 25 * scale, weight: .bold))
+                        HStack(spacing: 6 * scale) {
+                            Text("\(count)")
+                                .font(.system(size: 15 * scale, weight: .medium).monospacedDigit())
+                                .tracking(1.5 * scale)
+                            if folder.isPinned {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 11 * scale, weight: .semibold))
+                                    .help("Pinned to the sidebar")
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
+                        .opacity(0.82)
                     }
                     Spacer(minLength: 8)
                     Button(action: more) {
@@ -609,10 +883,11 @@ struct FolderCard: View {
         .onHover { isHovered = $0 }
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isHovered)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isTargeted)
-        .onTapGesture(perform: open)
+        .onTapGesture { if !naming.isEditing { open() } }
         .contextMenu {
             Button("Open", systemImage: "folder") { open() }
             Button("Rename, Color or Delete…", systemImage: "drop") { more() }
+            PinMenuItem(folder: folder)
         }
     }
 }
@@ -673,7 +948,13 @@ struct FolderThumbnail: View {
 /// type stays sharp and true to the full card.
 struct NoteThumbnail: View {
     let note: Note
-    @State private var preview = ""
+    @State private var preview: String
+
+    /// `initialPreview` is the note's text when it's already known.
+    init(note: Note, initialPreview: String = "") {
+        self.note = note
+        _preview = State(initialValue: initialPreview)
+    }
 
     static let size = CGSize(width: 40, height: 52)
     private static let scale: CGFloat = 1.0 / 3
@@ -765,8 +1046,9 @@ struct FolderBackShape: Shape {
     }
 }
 
-/// White sheets standing in the folder, one for each note up to three,
-/// tilted a little, with gray lines for text. They rise a touch when the
+/// Sheets standing in the folder, one for each note up to three, tilted a
+/// little, with lines for text. They're the note cards' color, so they
+/// follow light and dark mode as the cards do. They rise a touch when the
 /// folder is hovered or a note is dragged over it.
 struct PaperSheets: View {
     let count: Int
@@ -802,19 +1084,19 @@ struct PaperSheets: View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(sheets.enumerated()), id: \.offset) { index, sheet in
                 RoundedRectangle(cornerRadius: width * 0.035, style: .continuous)
-                    .fill(Palette.onDark)
+                    .fill(CardColor.top)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: height * 0.032) {
                             ForEach(Array(sheet.lines.enumerated()), id: \.offset) { _, line in
                                 Capsule()
-                                    .fill(Palette.onLight.opacity(0.1))
+                                    .fill(CardColor.body.opacity(0.25))
                                     .frame(width: width * sheet.width * 0.78 * line, height: max(1, height * 0.028))
                             }
                         }
                         .padding(.top, height * 0.075)
                         .padding(.leading, width * 0.045)
                     }
-                    .shadow(color: Palette.onLight.opacity(0.1), radius: min(3, height * 0.02), y: min(1, height * 0.006))
+                    .shadow(color: CardColor.shadow, radius: min(3, height * 0.02), y: min(1, height * 0.006))
                     .frame(width: width * sheet.width, height: height * 0.6)
                     .rotationEffect(.degrees(sheet.angle), anchor: .bottom)
                     .offset(x: width * sheet.x, y: height * sheet.top - (isRaised ? height * (0.03 + 0.012 * Double(index)) : 0))
@@ -1003,6 +1285,7 @@ struct FolderListRow: View {
     let folder: Folder
     let count: Int
     var isDropTarget = false
+    var naming = FolderNaming()
     var open: () -> Void
     var more: () -> Void
     @State private var isHovered = false
@@ -1014,10 +1297,8 @@ struct FolderListRow: View {
             FolderThumbnail(folder: folder, count: count)
                 .frame(width: ListThumbnail.column, height: NoteThumbnail.size.height)
             VStack(alignment: .leading, spacing: 3) {
-                Text(folder.name)
-                    .font(.system(size: 13.5, weight: .medium))
-                    .lineLimit(1)
-                Text(count == 1 ? "1 note" : "\(count) notes")
+                FolderName(name: folder.name, naming: naming, font: .system(size: 13.5, weight: .medium))
+                Text((folder.isPinned ? "Pinned · " : "") + (count == 1 ? "1 note" : "\(count) notes"))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -1035,38 +1316,74 @@ struct FolderListRow: View {
         }
         .padding(.horizontal, 30)
         .padding(.vertical, 10)
-        .background(isTargeted ? Palette.accentSoft : isHovered ? Palette.fill.opacity(0.5) : .clear)
+        .background(isTargeted ? Palette.accentSoft : isHovered ? Palette.hover : .clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .onTapGesture(perform: open)
+        .onTapGesture { if !naming.isEditing { open() } }
+        .contextMenu {
+            Button("Open", systemImage: "folder") { open() }
+            Button("Rename, Color or Delete…", systemImage: "drop") { more() }
+            PinMenuItem(folder: folder)
+        }
     }
 }
 
-/// Picks a card or row up for reordering, and makes it a place to drop.
-struct Reorderable: ViewModifier {
-    let item: DraggedItem
-    @Binding var dragging: DraggedItem?
-    @Binding var fileTarget: UUID?
-    let signal: DragSignal
-    var move: (UUID, UUID) -> Void
-    var file: (UUID, UUID) -> Void
+/// Pins a folder to the sidebar, or takes it off, from a menu.
+struct PinMenuItem: View {
+    @Environment(ProcessingCenter.self) private var center
+    let folder: Folder
 
-    func body(content: Content) -> some View {
-        content
-            .opacity(dragging == item ? 0.45 : 1)
-            .onDrag {
-                signal.last = .now
-                dragging = item
-                return item.provider
+    var body: some View {
+        Button(folder.isPinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: folder.isPinned ? "pin.slash" : "pin") {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                center.setPinned(folder, !folder.isPinned)
             }
-            .onDrop(of: [.ovylNote, .ovylFolder], delegate: ReorderDrop(
-                target: item.id,
-                targetIsFolder: item.isFolder,
-                dragging: $dragging,
-                fileTarget: $fileTarget,
-                signal: signal,
-                move: move,
-                file: file
-            ))
+        }
+    }
+}
+
+/// A folder's name being edited where it's shown: whether it is, the name
+/// so far, and keeping or dropping it.
+struct FolderNaming {
+    var isEditing = false
+    var name: Binding<String> = .constant("")
+    var commit: () -> Void = {}
+    var cancel: () -> Void = {}
+}
+
+/// A folder's name, or, while it's being edited, a field in its place,
+/// focused with the name selected. Return or clicking away keeps it; Escape
+/// drops it.
+struct FolderName: View {
+    let name: String
+    let naming: FolderNaming
+    let font: Font
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if naming.isEditing {
+            TextField("Folder name", text: naming.name)
+                .textFieldStyle(.plain)
+                .font(font)
+                .lineLimit(1)
+                .focused($focused)
+                .onSubmit(naming.commit)
+                .onExitCommand(perform: naming.cancel)
+                .onAppear { DispatchQueue.main.async { focused = true } }
+                .onChange(of: focused) { _, focused in
+                    if !focused { naming.commit() }
+                }
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.foreground.opacity(0.14))
+                        .padding(.horizontal, -7)
+                        .padding(.vertical, -3)
+                }
+                .transition(.opacity)
+        } else {
+            Text(name)
+                .font(font)
+                .lineLimit(1)
+        }
     }
 }

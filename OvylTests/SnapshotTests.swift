@@ -118,7 +118,7 @@ struct SnapshotTests {
         try await render(ContentView(initialSelection: pictures.id), container: container, name: "note-pictures-dark", dark: true, size: tall)
         try await render(ContentView(initialSelection: queued.id), container: container, name: "processing-light", dark: false)
         try await render(ContentView(initialSelection: failed.id), container: container, name: "failed-dark", dark: true)
-        try await render(SettingsView(), container: container, name: "settings", dark: false, size: CGSize(width: 540, height: 640))
+        try await render(SettingsView(), container: container, name: "settings", dark: false, size: SettingsView.size)
         for item in [note, pictures] + made.values {
             try? FileManager.default.removeItem(at: item.thumbnailsFolder)
         }

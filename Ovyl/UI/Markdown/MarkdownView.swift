@@ -325,14 +325,14 @@ struct CalloutStyle {
     let background: Color
 
     init(kind: String) {
-        let gold = (Palette.accentText, Palette.accentSoft)
+        let accent = (Palette.accentText, Palette.accentSoft)
         let success = (Palette.success, Palette.success.opacity(0.1))
         let neutral = (Palette.textPrimary.opacity(0.75), Palette.fill)
         let warning = (Palette.warning, Palette.warning.opacity(0.1))
         let danger = (Palette.danger, Palette.danger.opacity(0.1))
         let (symbol, tint): (String, (Color, Color)) = switch kind {
-        case "summary", "abstract", "tldr": ("list.bullet.clipboard", gold)
-        case "tip", "hint", "important": ("flame", gold)
+        case "summary", "abstract", "tldr": ("list.bullet.clipboard", accent)
+        case "tip", "hint", "important": ("flame", accent)
         case "success", "check", "done": ("checkmark.circle", success)
         case "screen": ("text.viewfinder", neutral)
         case "music": ("music.note", neutral)

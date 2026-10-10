@@ -19,11 +19,14 @@ extension Folder {
     var color: Color { Color(hex: hex) }
 }
 
-/// The left sidebar: Home and New, then the folders, each with its count.
+/// The left sidebar: Home and New, then the folders pinned to it, each with
+/// its count. Every folder is on Home; pinning one keeps it here too.
 /// The speech model's state sits at the bottom.
 struct SidebarView: View {
     @Environment(ProcessingCenter.self) private var center
     @Environment(Navigator.self) private var navigator
+    /// A card carried from Home or a folder, which can be dropped on a folder here.
+    @Environment(CardDrag.self) private var cardDrag: CardDrag?
     @AppStorage("showSidebar") private var showSidebar = true
     let notes: [Note]
     let folders: [Folder]
@@ -49,7 +52,7 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    row("Home", symbol: "circle.grid.3x3", color: nil, count: notes.count, selected: isListShown(.home)) {
+                    row("Home", symbol: "circle.grid.3x3", color: nil, count: notes.count, selected: isListShown(.home) || isUnpinnedFolderShown) {
                         navigator.go(.home)
                     }
                     row("New", symbol: "plus.square", color: nil, count: nil, selected: false, action: onNew)
@@ -75,15 +78,16 @@ struct SidebarView: View {
                     .padding(.top, 18)
                     .padding(.bottom, 4)
 
-                    if folders.isEmpty {
-                        Text("Make a folder, then drag notes onto it.")
+                    if pinned.isEmpty, cardDrag?.pinsToSidebar != true {
+                        Text(folders.isEmpty ? "Make a folder, then drag notes onto it." : "Pin folders from Home to keep them here.")
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 4)
                     }
-                    ForEach(folders) { folderRow($0) }
+                    ForEach(pinned) { folderRow($0) }
+                    if cardDrag?.pinsToSidebar == true { pinSlot }
                 }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
@@ -94,9 +98,41 @@ struct SidebarView: View {
         }
         .frame(width: Self.width)
         .background(Palette.background, ignoresSafeAreaEdges: .top)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardDrag?.sidebarFrame = $0 }
+        .onDisappear { cardDrag?.sidebarFrame = .zero }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: pinned.map(\.id))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Palette.border).frame(width: 1).ignoresSafeArea(edges: .top)
         }
+    }
+
+    private var pinned: [Folder] { folders.filter(\.isPinned) }
+
+    /// A folder that isn't pinned is reached from Home, so Home stays
+    /// selected while it's open.
+    private var isUnpinnedFolderShown: Bool {
+        let list = navigator.route.isList ? navigator.route : navigator.listRoute
+        guard case .folder(let id) = list else { return false }
+        return folders.first { $0.id == id }?.isPinned == false
+    }
+
+    /// Where a folder card carried over the sidebar will be pinned.
+    private var pinSlot: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 20)
+            Text("Pin to Sidebar")
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Palette.textPrimary)
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(RowBackground(selected: false, targeted: true))
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardDrag?.sidebarPinSlot = $0 }
+        .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity))
     }
 
     /// Whether the sidebar shows `list` as selected: it's the list on screen,
@@ -110,11 +146,11 @@ struct SidebarView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(color ?? Palette.textPrimary.opacity(0.7))
+                    .foregroundStyle(color ?? (selected ? Palette.accent : Palette.textSecondary))
                     .frame(width: 20)
                 Text(title)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Palette.textPrimary)
+                    .font(.system(size: 13.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let count {
@@ -156,7 +192,8 @@ struct SidebarView: View {
                     }
             } else {
                 Text(folder.name)
-                    .font(.system(size: 13.5))
+                    .font(.system(size: 13.5, weight: isListShown(route) ? .semibold : .regular))
+                    .foregroundStyle(isListShown(route) ? Palette.textPrimary : Palette.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -166,7 +203,9 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(RowBackground(selected: isListShown(route), targeted: dropFolderID == folder.id))
+        .background(RowBackground(selected: isListShown(route), targeted: dropFolderID == folder.id || cardDrag?.fileTarget == folder.id))
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { cardDrag?.sidebarFolders[folder.id] = $0 }
+        .onDisappear { cardDrag?.sidebarFolders[folder.id] = nil }
         .contentShape(Rectangle())
         .onTapGesture { navigator.go(route) }
         .contextMenu {
@@ -175,6 +214,7 @@ struct SidebarView: View {
                 onNew()
             }
             Button("Rename", systemImage: "pencil") { center.folderToRename = folder.id }
+            PinMenuItem(folder: folder)
             Divider()
             Button("Delete Folder", systemImage: "trash", role: .destructive) {
                 center.delete(folder)
@@ -195,7 +235,8 @@ struct SidebarView: View {
     }
 }
 
-/// A row's highlight: gray when selected, fainter on hover.
+/// A row's highlight, as Beam's: a green wash when selected, edged in green
+/// while something is dragged over it, and a faint ink wash on hover.
 struct RowBackground: View {
     var selected: Bool
     var targeted = false
@@ -203,9 +244,12 @@ struct RowBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(selected ? Palette.fill
-                : targeted ? Palette.accentSoft
-                : isHovered ? Palette.fill.opacity(0.55) : .clear)
+            .fill(selected || targeted ? Palette.accentSoft
+                : isHovered ? Palette.hover : .clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(targeted ? Palette.accentEdge : .clear, lineWidth: 1)
+            )
             .onHover { isHovered = $0 }
             .animation(.easeOut(duration: 0.1), value: isHovered)
     }

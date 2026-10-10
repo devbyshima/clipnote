@@ -2,20 +2,7 @@
   "fill-specializations" : [
     {
       "value" : {
-        "linear-gradient" : [
-          "display-p3:0.98824,0.88235,0.60392,1.00000",
-          "display-p3:0.92549,0.52941,0.14902,1.00000"
-        ],
-        "orientation" : {
-          "start" : {
-            "x" : 0.62,
-            "y" : 0
-          },
-          "stop" : {
-            "x" : 0.38,
-            "y" : 1
-          }
-        }
+        "solid" : "display-p3:0.69020,0.76078,0.27451,1.00000"
       }
     },
     {

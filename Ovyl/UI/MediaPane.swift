@@ -85,7 +85,7 @@ struct MediaPane: View {
                     MissingMediaState(isAudio: note.mediaKind == .audio, fileName: note.sourceName) { isLocating = true }
                         .padding(.bottom, 64)
                 } else {
-                    DotGrid()
+                    DotGrid(background: Palette.mediaPage)
                     hero
                         .padding(.horizontal, 28)
                         .padding(.top, 24)
@@ -105,7 +105,7 @@ struct MediaPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background, ignoresSafeAreaEdges: .top)
+        .background(Palette.mediaPage, ignoresSafeAreaEdges: .top)
         .modifier(LocateSource(note: note, player: media.player, isPresented: $isLocating))
     }
 

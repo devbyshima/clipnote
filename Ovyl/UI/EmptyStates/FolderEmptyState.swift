@@ -92,9 +92,9 @@ struct FolderEmptyState: View {
 
 /// The folder in the cards' own look: a colored back with its tab, a white
 /// sheet standing in it once a note is in, and the front with the name and
-/// count, which tips forward to take the note. Ovyl's own folder: gold
-/// deepening toward ember, a shimmer along the front's top edge, and a
-/// warm glow; dashed in ember while a note is dragged over it.
+/// count, which tips forward to take the note. Ovyl's own folder: green
+/// deepening toward its shade, a light along the front's top edge, and a
+/// green glow; dashed in the shade while a note is dragged over it.
 struct FolderGlyph: View {
     let target: Double
     let open: Double
@@ -104,11 +104,11 @@ struct FolderGlyph: View {
 
     private static let size = CGSize(width: 170, height: 102)
     private let tint = HexColor(Palette.Hex.accent)
-    private let ember = HexColor(Palette.Hex.ember)
+    private let shade = HexColor(Palette.Hex.accentDeep)
     /// The back sits deeper than the front, so the two read apart on a
     /// light page as well as a dark one.
-    private var back: HexColor { tint.blended(with: ember, 0.3) }
-    private var backFoot: HexColor { tint.blended(with: ember, 0.5) }
+    private var back: HexColor { tint.blended(with: shade, 0.3) }
+    private var backFoot: HexColor { tint.blended(with: shade, 0.5) }
 
     var body: some View {
         let w = Self.size.width
@@ -118,7 +118,7 @@ struct FolderGlyph: View {
         ZStack(alignment: .topLeading) {
             FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius)
                 .fill(LinearGradient(colors: [back.color, backFoot.color], startPoint: .top, endPoint: .bottom))
-                .overlay(FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius).stroke(Palette.ember.opacity(0.45), lineWidth: 1))
+                .overlay(FolderBackShape(tabWidth: w * 0.445, tabDrop: h * 0.096, radius: radius).stroke(Palette.accentDeep.opacity(0.45), lineWidth: 1))
                 .frame(width: w, height: front + radius)
 
             PaperSheets(count: 1, width: w, height: h, isRaised: filled > 0.5)
@@ -131,18 +131,18 @@ struct FolderGlyph: View {
 
             ZStack(alignment: .topLeading) {
                 UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
-                    .fill(LinearGradient(colors: [tint.color, tint.blended(with: ember, 0.6).color], startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: [tint.color, tint.blended(with: shade, 0.6).color], startPoint: .top, endPoint: .bottom))
                     .overlay(
                         UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
-                            .strokeBorder(Palette.ember.opacity(0.45), lineWidth: 1)
+                            .strokeBorder(Palette.accentDeep.opacity(0.45), lineWidth: 1)
                     )
-                // The shimmer along the front's top edge, as on the icons.
+                // Light along the front's top edge.
                 LinearGradient(
                     stops: [
                         .init(color: Palette.accent.opacity(0), location: 0),
-                        .init(color: Palette.shimmerLime, location: 0.3),
-                        .init(color: Palette.shimmerIce, location: 0.55),
-                        .init(color: Palette.shimmerMint, location: 0.75),
+                        .init(color: Palette.onDark.opacity(0.55), location: 0.3),
+                        .init(color: Palette.onDark.opacity(0.7), location: 0.55),
+                        .init(color: Palette.onDark.opacity(0.55), location: 0.75),
                         .init(color: Palette.accent.opacity(0), location: 1),
                     ],
                     startPoint: .leading,
@@ -178,7 +178,7 @@ struct FolderGlyph: View {
                 .padding(-6)
                 .opacity(target)
         )
-        .shadow(color: Palette.ember.opacity(0.35), radius: 14, y: 8)
+        .shadow(color: Palette.accent.opacity(0.35), radius: 14, y: 8)
         .scaleEffect(1 + 0.03 * target)
     }
 }

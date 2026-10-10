@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Ovyl's look: Gold & Graphite (see Palette), a dotted canvas behind media,
+// Ovyl's look: Beam's colors and controls (see Palette), a dotted canvas behind media,
 // and two typefaces: the system font, and Caveat for handwriting; a note can
 // also be read in New York.
 
@@ -40,7 +40,7 @@ extension NSFont {
 
 // MARK: - Controls
 
-/// A capsule of toolbar buttons on a surface.
+/// A capsule of toolbar buttons, washed with ink as Beam's chips are.
 struct PillGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -48,13 +48,12 @@ struct PillGroup<Content: View>: View {
         HStack(spacing: 0) { content }
             .padding(.horizontal, 3)
             .frame(height: 30)
-            .background(Capsule(style: .continuous).fill(Palette.surface))
-            .overlay(Capsule(style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
-            .shadow(color: Palette.shadow, radius: 1.5, y: 0.5)
+            .background(Capsule(style: .continuous).fill(Palette.fill))
     }
 }
 
-/// An icon button for a `PillGroup`. Active, it's filled gold.
+/// An icon button for a `PillGroup`. Active, it's green on a green wash, as
+/// Beam marks what's selected.
 struct PillButton: View {
     let symbol: String
     let help: String
@@ -67,11 +66,11 @@ struct PillButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isActive ? Palette.onAccent : Palette.textPrimary.opacity(0.72))
+                .foregroundStyle(isActive ? Palette.accent : Palette.textSecondary)
                 .frame(width: 30, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isActive ? Palette.accent : (isHovered && isEnabled ? Palette.fill : .clear))
+                        .fill(isActive ? Palette.accentSoft : (isHovered && isEnabled ? Palette.hover : .clear))
                 )
                 .contentShape(Rectangle())
                 .opacity(isEnabled ? 1 : 0.35)
@@ -95,7 +94,7 @@ struct PillMenu<Items: View>: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Palette.textPrimary.opacity(0.72))
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: 30, height: 24)
                 .contentShape(Rectangle())
         }
@@ -117,20 +116,20 @@ struct KeyChip: View {
             .foregroundStyle(Palette.textSecondary)
             .frame(minWidth: 20, minHeight: 18)
             .padding(.horizontal, 2)
-            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Palette.fill))
+            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Palette.fill))
     }
 }
 
-/// A capsule on a surface that floats over content, near the bottom of a pane.
+/// A glass capsule with a hairline edge that floats over content, near the
+/// bottom of a pane, as Beam's toasts do.
 struct FloatingBar<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         HStack(spacing: 2) { content }
             .padding(4)
-            .background(Capsule(style: .continuous).fill(Palette.surface))
+            .glassEffect(.regular, in: Capsule(style: .continuous))
             .overlay(Capsule(style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
-            .shadow(color: Palette.shadow, radius: 12, y: 4)
     }
 }
 
@@ -151,11 +150,11 @@ struct BarButton: View {
                     .font(.system(size: 13))
                 if let key { KeyChip(key: key).padding(.leading, 3) }
             }
-            .foregroundStyle(Palette.textPrimary.opacity(0.85))
+            .foregroundStyle(Palette.textPrimary)
             .padding(.leading, 12)
             .padding(.trailing, key == nil ? 12 : 6)
             .padding(.vertical, 5)
-            .background(Capsule(style: .continuous).fill(isHovered ? Palette.fill : .clear))
+            .background(Capsule(style: .continuous).fill(isHovered ? Palette.hover : .clear))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -167,6 +166,7 @@ struct BarButton: View {
 /// Dots on the background, behind media.
 struct DotGrid: View {
     var spacing: CGFloat = 18
+    var background = Palette.background
 
     var body: some View {
         Canvas { context, size in
@@ -182,7 +182,7 @@ struct DotGrid: View {
             }
             context.fill(dots, with: .color(Palette.border))
         }
-        .background(Palette.background)
+        .background(background)
     }
 }
 
@@ -223,7 +223,7 @@ struct EmptyState: View {
     }
 }
 
-/// The gold capsule button for the main action in an empty or failed pane.
+/// The green capsule button for the main action in an empty or failed pane.
 struct FilledButton: View {
     let title: String
     var symbol: String?
@@ -235,13 +235,16 @@ struct FilledButton: View {
                 if let symbol { Image(systemName: symbol).font(.system(size: 11, weight: .bold)) }
                 Text(title)
             }
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         }
-        .buttonStyle(.gold)
+        .buttonStyle(.prominent)
         .focusEffectDisabled()
     }
 }
 
-/// An outlined capsule button for secondary actions.
+/// A washed capsule button for secondary actions.
 struct PlainCapsuleButton: View {
     let title: String
     var symbol: String?
@@ -254,7 +257,7 @@ struct PlainCapsuleButton: View {
                 Text(title)
             }
         }
-        .buttonStyle(.outline)
+        .buttonStyle(.plainCapsule)
         .focusEffectDisabled()
     }
 }

@@ -172,21 +172,39 @@ final class ProcessingCenter {
 
     /// Makes a folder named "Untitled folder" (numbered if taken) and asks the
     /// sidebar to rename it.
+    /// Makes a folder with the next free "Untitled folder" name, ready to be
+    /// named where it shows: a pinned one in the sidebar, an unpinned one on
+    /// its card on Home.
     @discardableResult
-    func createFolder() -> Folder {
+    func createFolder(named given: String? = nil, pinned: Bool = true) -> Folder {
         let folders = (try? context.fetch(FetchDescriptor<Folder>())) ?? []
-        let taken = Set(folders.map(\.name))
+        let trimmed = given?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let name = trimmed.isEmpty ? nextFolderName() : trimmed
+        let folder = Folder(name: name, colorName: Folder.colors[folders.count % Folder.colors.count])
+        folder.isPinned = pinned
+        context.insert(folder)
+        save()
+        folderToRename = folder.id
+        return folder
+    }
+
+    /// "Untitled folder", or the first "Untitled folder 2", 3… not taken.
+    func nextFolderName() -> String {
+        let taken = Set(((try? context.fetch(FetchDescriptor<Folder>())) ?? []).map(\.name))
         var name = "Untitled folder"
         var number = 2
         while taken.contains(name) {
             name = "Untitled folder \(number)"
             number += 1
         }
-        let folder = Folder(name: name, colorName: Folder.colors[folders.count % Folder.colors.count])
-        context.insert(folder)
+        return name
+    }
+
+    /// Pins the folder to the sidebar, or takes it off.
+    func setPinned(_ folder: Folder, _ pinned: Bool) {
+        guard folder.isPinned != pinned else { return }
+        folder.isPinned = pinned
         save()
-        folderToRename = folder.id
-        return folder
     }
 
     func rename(_ folder: Folder, to name: String) {

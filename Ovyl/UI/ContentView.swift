@@ -12,6 +12,8 @@ struct ContentView: View {
     @Query(sort: \Folder.createdAt) private var folders: [Folder]
     @State private var navigator: Navigator
     @State private var media = NoteMedia()
+    /// A card carried around Home or a folder, drawn above every pane.
+    @State private var cardDrag = CardDrag()
     @State private var isDropTargeted = false
     @State private var keyMonitor: Any?
     @AppStorage("showSidebar") private var showSidebar = true
@@ -109,8 +111,10 @@ struct ContentView: View {
             // The panes' headers share the top row with the traffic lights.
             .ignoresSafeArea(.container, edges: .top)
         }
+        .overlay { CardDragLayer() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(navigator)
+        .environment(cardDrag)
         .background { MainWindowStyler() }
         .background { shortcuts }
         .fileImporter(

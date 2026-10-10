@@ -59,7 +59,7 @@ struct SearchEmptyState: View {
             ZStack(alignment: .topLeading) {
                 notes(shown, tour: tour, size: grid.size, local: local, kept: kept, remarks: true)
 
-                // What the glass shows: the same notes, larger, in gold.
+                // What the glass shows: the same notes, larger, in green.
                 ZStack(alignment: .topLeading) {
                     notes(shown, tour: tour, size: grid.size, local: local, kept: 0, remarks: false)
                         .scaleEffect(Self.zoom, anchor: grid.unit(glass))

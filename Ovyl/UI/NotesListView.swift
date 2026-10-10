@@ -3,6 +3,7 @@ import SwiftUI
 /// The middle pane for Home or a folder: the notes, newest first, grouped by
 /// when they were made.
 struct NotesListView: View {
+    @Environment(ProcessingCenter.self) private var center
     @Environment(Navigator.self) private var navigator
     let title: String
     var folder: Folder?
@@ -52,6 +53,30 @@ struct NotesListView: View {
                 }
             } trailing: {
                 if isSearching { searchField }
+                if !isSearching {
+                    if let folder {
+                        PillGroup {
+                            PillButton(
+                                symbol: folder.isPinned ? "pin.fill" : "pin",
+                                help: folder.isPinned ? "Unpin from Sidebar" : "Pin to Sidebar",
+                                isActive: folder.isPinned
+                            ) {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    center.setPinned(folder, !folder.isPinned)
+                                }
+                            }
+                        }
+                    } else {
+                        PillGroup {
+                            // Named right on its card once it's made.
+                            PillButton(symbol: "folder.badge.plus", help: "New Folder") {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                    _ = center.createFolder(pinned: false)
+                                }
+                            }
+                        }
+                    }
+                }
                 PillGroup {
                     PillButton(symbol: "magnifyingglass", help: "Search (⌘F)", isActive: isSearching) {
                         toggleSearch()
@@ -172,6 +197,9 @@ struct NoteListRow: View {
     var match: NoteMatch?
     /// Whether the row drags itself; the grid's list does it instead.
     var isDraggable = true
+    /// The note's text for the thumbnail when it's already known, as for a
+    /// row that's being carried.
+    var thumbnailPreview = ""
     @State private var isHovered = false
 
     private var isLastOpened: Bool {
@@ -180,7 +208,7 @@ struct NoteListRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            NoteThumbnail(note: note)
+            NoteThumbnail(note: note, initialPreview: thumbnailPreview)
                 .frame(width: ListThumbnail.column)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -214,7 +242,7 @@ struct NoteListRow: View {
         }
         .padding(.horizontal, 30)
         .padding(.vertical, 10)
-        .background(isLastOpened ? Palette.accentSoft : (isHovered ? Palette.fill.opacity(0.5) : .clear))
+        .background(isLastOpened ? Palette.accentSoft : (isHovered ? Palette.hover : .clear))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { navigator.go(.note(note.id)) }
@@ -233,7 +261,7 @@ struct NoteListRow: View {
             HStack(spacing: 8) {
                 LogoLoader(LogoMotion(note: note))
                     .frame(width: 15, height: 15)
-                GoldProgressBar(value: note.progress, height: 4)
+                AccentProgressBar(value: note.progress, height: 4)
                     .frame(width: 70)
                 Text(note.stage.isEmpty ? "Working" : note.stage)
                     .lineLimit(1)
