@@ -342,16 +342,29 @@ final class ProcessingCenter {
     // MARK: Store
 
     private static func makeContainer() -> ModelContainer {
+        let schema = Schema([Note.self, Folder.self])
+        // Tests run inside the app, so they keep to memory and never touch
+        // the notes store of a copy of Ovyl that's open.
+        if isRunningTests, let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)) {
+            return container
+        }
         let folder = URL.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appending(path: "Ovyl.store")
-        let schema = Schema([Note.self, Folder.self])
-        if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
-            return container
+        // Another copy of Ovyl closing can hold the store a moment, so it's
+        // tried again before it's thought unreadable.
+        for attempt in 0..<3 {
+            if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
+                return container
+            }
+            if attempt < 2 { Thread.sleep(forTimeInterval: 0.5) }
         }
-        // An unreadable store is set aside rather than crashing the app.
+        // An unreadable store is set aside rather than crashing the app, with
+        // its journal, so nothing written to it is left behind.
         let aside = folder.appending(path: "Ovyl-unreadable-\(Int(Date.now.timeIntervalSince1970)).store")
-        try? FileManager.default.moveItem(at: url, to: aside)
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: aside.path + suffix))
+        }
         if let container = try? ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url)) {
             return container
         }
